@@ -75,7 +75,7 @@ class ResearchCoordinator:
         self._csm = ClientSuccessManager()
         self._pm = ProjectManager()
         self._team_builder = TeamBuilder()
-        self._search_engine = SearchEngineFactory.create()
+        self._search_engine = SearchEngineFactory.create(control_ui=ui)
         self._quality_loop = QualityLoop()
         self._search_server: SearchServer | None = None
         self._search_port: int = 0

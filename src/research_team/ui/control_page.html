@@ -85,6 +85,16 @@
     .log-item .done { color: #4ade80; }
     .log-item .running { color: #facc15; }
     .log-item .pending { color: #555; }
+    .log-item .error { color: #f87171; }
+    .log-item .warn { color: #fb923c; }
+
+    .error-banner {
+      margin: 8px; padding: 10px 14px;
+      background: #450a0a; border: 1px solid #f87171; border-radius: 8px;
+      font-size: 12px; color: #fca5a5; font-family: monospace;
+      white-space: pre-wrap; word-break: break-word; display: none;
+    }
+    .error-banner.visible { display: block; }
 
     .captcha-banner {
       display: none;
@@ -100,6 +110,42 @@
       font-weight: bold; cursor: pointer;
     }
     .captcha-banner button:hover { background: #22c55e; }
+
+    .approval-banner {
+      display: none;
+      margin: 10px; padding: 12px 14px;
+      background: #1e3a5f; border-radius: 10px;
+      border: 1px solid #3b82f6;
+    }
+    .approval-banner.visible { display: block; }
+    .approval-banner .approval-url {
+      font-size: 11px; color: #93c5fd; word-break: break-all;
+      margin-bottom: 4px; font-family: monospace;
+    }
+    .approval-banner .approval-title {
+      font-size: 13px; font-weight: bold; color: #e0e0e0;
+      margin-bottom: 6px;
+    }
+    .approval-banner .approval-preview {
+      font-size: 11px; color: #9ca3af; line-height: 1.5;
+      max-height: 80px; overflow-y: auto;
+      background: #0f172a; padding: 6px 8px; border-radius: 6px;
+      margin-bottom: 10px; font-family: monospace; white-space: pre-wrap;
+    }
+    .approval-banner .approval-buttons {
+      display: flex; gap: 8px;
+    }
+    .approval-banner .btn-approve {
+      flex: 1; padding: 8px; background: #22c55e; color: #000;
+      border: none; border-radius: 8px; font-size: 13px;
+      font-weight: bold; cursor: pointer;
+    }
+    .approval-banner .btn-approve:hover { background: #16a34a; }
+    .approval-banner .btn-reject {
+      flex: 1; padding: 8px; background: #374151; color: #e0e0e0;
+      border: none; border-radius: 8px; font-size: 13px; cursor: pointer;
+    }
+    .approval-banner .btn-reject:hover { background: #4b5563; }
   </style>
 </head>
 <body>
@@ -129,6 +175,16 @@
           <p>⚠️ <strong>操作が必要です</strong><br>
             ブラウザBで操作を完了してから<br>下のボタンを押してください。</p>
           <button onclick="signalCaptchaDone()">✅ 操作完了・継続する</button>
+        </div>
+
+        <div class="approval-banner" id="approvalBanner">
+          <div class="approval-url" id="approvalUrl"></div>
+          <div class="approval-title" id="approvalTitle"></div>
+          <div class="approval-preview" id="approvalPreview"></div>
+          <div class="approval-buttons">
+            <button class="btn-approve" onclick="signalApproval(true)">✅ 取り込む</button>
+            <button class="btn-reject" onclick="signalApproval(false)">❌ スキップ</button>
+          </div>
         </div>
       </div>
     </div>
@@ -176,6 +232,21 @@
 
     function setCaptchaVisible(visible) {
       document.getElementById('captchaBanner').classList.toggle('visible', visible);
+    }
+
+    function setApprovalVisible(visible, url, title, preview) {
+      const banner = document.getElementById('approvalBanner');
+      if (visible) {
+        document.getElementById('approvalUrl').textContent = url;
+        document.getElementById('approvalTitle').textContent = title;
+        document.getElementById('approvalPreview').textContent = preview;
+      }
+      banner.classList.toggle('visible', visible);
+    }
+
+    function signalApproval(approved) {
+      setApprovalVisible(false, '', '', '');
+      window.__rt_signal({ type: 'approval_done', approved: approved });
     }
 
     function sendChat() {

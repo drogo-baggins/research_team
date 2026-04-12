@@ -14,6 +14,8 @@ class ControlUI:
         self._page: Page | None = None
         self._chat_queue: asyncio.Queue[str] = asyncio.Queue()
         self._captcha_event: asyncio.Event = asyncio.Event()
+        self._approval_event: asyncio.Event = asyncio.Event()
+        self._approval_result: bool = False
 
     async def start(self) -> None:
         self._context = await self._browser.new_context()
@@ -30,6 +32,9 @@ class ControlUI:
                 await self._chat_queue.put(payload.get("message", ""))
             case "captcha_done":
                 self._captcha_event.set()
+            case "approval_done":
+                self._approval_result = payload.get("approved", False)
+                self._approval_event.set()
 
     async def append_agent_message(self, sender: str, text: str) -> None:
         if not self._is_alive():
@@ -60,6 +65,19 @@ class ControlUI:
         if self._is_alive():
             await self._page.evaluate("setCaptchaVisible(true)")
         await self._captcha_event.wait()
+
+    async def request_content_approval(self, url: str, title: str, preview: str) -> bool:
+        self._approval_event.clear()
+        self._approval_result = False
+        if self._is_alive():
+            safe_url = json.dumps(url)
+            safe_title = json.dumps(title)
+            safe_preview = json.dumps(preview[:500])
+            await self._page.evaluate(
+                f"setApprovalVisible(true, {safe_url}, {safe_title}, {safe_preview})"
+            )
+        await self._approval_event.wait()
+        return self._approval_result
 
     async def close(self) -> None:
         if self._context:

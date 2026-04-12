@@ -51,6 +51,14 @@ class HumanSearchEngine(SearchEngine):
         if any(s in title.lower() or s in url.lower() for s in captcha_signals):
             await self._control_ui.request_captcha()
 
+    async def _request_approval(self, page: Page) -> bool:
+        if self._control_ui is None:
+            return True
+        url = page.url
+        title = await page.title()
+        preview = await self._extract_content(page)
+        return await self._control_ui.request_content_approval(url, title, preview)
+
     async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         search_url = f"{self._search_engine_url}{query.replace(' ', '+')}"
         page = await self._navigate_and_wait(search_url)
@@ -66,6 +74,10 @@ class HumanSearchEngine(SearchEngine):
             try:
                 result_page = await self._navigate_and_wait(href, timeout_ms=10_000)
                 await self._handle_captcha_if_needed(result_page)
+                approved = await self._request_approval(result_page)
+                if not approved:
+                    await result_page.close()
+                    continue
                 title = await result_page.title()
                 content = await self._extract_content(result_page)
                 await result_page.close()
@@ -85,6 +97,7 @@ class HumanSearchEngine(SearchEngine):
     async def fetch(self, url: str) -> SearchResult:
         page = await self._navigate_and_wait(url)
         await self._handle_captcha_if_needed(page)
+        await self._request_approval(page)
         title = await page.title()
         content = await self._extract_content(page)
         await page.close()
