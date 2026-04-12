@@ -44,16 +44,40 @@
     }
     .chat-input button:hover { background: #6b44a0; }
 
-    .progress-pane {
-      width: 320px; display: flex; flex-direction: column;
+    .right-pane {
+      width: 340px; display: flex; flex-direction: column;
       background: #16213e;
     }
-    .progress-pane h3 {
-      padding: 12px 16px; font-size: 13px;
+
+    .stream-pane {
+      flex: 0 0 auto; max-height: 45%; display: flex; flex-direction: column;
+      border-bottom: 1px solid #0f3460;
+    }
+    .stream-pane h3 {
+      padding: 10px 16px; font-size: 13px;
       border-bottom: 1px solid #0f3460; color: #a0a0c0;
+      flex-shrink: 0;
+    }
+    .stream-box {
+      flex: 1; overflow-y: auto; padding: 10px 14px;
+      font-size: 12px; line-height: 1.6; font-family: monospace;
+      color: #b0d4ff; white-space: pre-wrap; word-break: break-word;
+      min-height: 80px;
+    }
+    .stream-agent-label {
+      font-size: 10px; color: #facc15; margin-bottom: 2px;
+    }
+
+    .progress-pane {
+      flex: 1; display: flex; flex-direction: column;
+    }
+    .progress-pane h3 {
+      padding: 10px 16px; font-size: 13px;
+      border-bottom: 1px solid #0f3460; color: #a0a0c0;
+      flex-shrink: 0;
     }
     .progress-log {
-      flex: 1; overflow-y: auto; padding: 12px 16px;
+      flex: 1; overflow-y: auto; padding: 10px 14px;
       display: flex; flex-direction: column; gap: 6px;
     }
     .log-item { font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
@@ -64,7 +88,7 @@
 
     .captcha-banner {
       display: none;
-      margin: 12px; padding: 14px 16px;
+      margin: 10px; padding: 12px 14px;
       background: #7c2d12; border-radius: 10px;
       border: 1px solid #f97316;
     }
@@ -91,23 +115,33 @@
       </div>
     </div>
 
-    <div class="progress-pane">
-      <h3>📋 進捗ログ</h3>
-      <div class="progress-log" id="progressLog"></div>
+    <div class="right-pane">
+      <div class="stream-pane">
+        <h3>⚡ エージェント出力</h3>
+        <div class="stream-box" id="streamBox"></div>
+      </div>
 
-      <div class="captcha-banner" id="captchaBanner">
-        <p>⚠️ <strong>操作が必要です</strong><br>
-          ブラウザBで操作を完了してから<br>下のボタンを押してください。</p>
-        <button onclick="signalCaptchaDone()">✅ 操作完了・継続する</button>
+      <div class="progress-pane">
+        <h3>📋 進捗ログ</h3>
+        <div class="progress-log" id="progressLog"></div>
+
+        <div class="captcha-banner" id="captchaBanner">
+          <p>⚠️ <strong>操作が必要です</strong><br>
+            ブラウザBで操作を完了してから<br>下のボタンを押してください。</p>
+          <button onclick="signalCaptchaDone()">✅ 操作完了・継続する</button>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
+    let _currentStreamAgent = null;
+    let _currentStreamEl = null;
+
     function appendMessage(sender, text, isUser) {
       const el = document.createElement('div');
       el.className = 'msg ' + (isUser ? 'user' : 'agent');
-      el.innerHTML = `<div class="sender">${sender}</div><div>${text}</div>`;
+      el.innerHTML = `<div class="sender">${sender}</div><div>${escapeHtml(text)}</div>`;
       const box = document.getElementById('chatMessages');
       box.appendChild(el);
       box.scrollTop = box.scrollHeight;
@@ -117,10 +151,27 @@
       const icons = { done: '✓', running: '→', pending: '○' };
       const el = document.createElement('div');
       el.className = 'log-item';
-      el.innerHTML = `<span class="icon ${status}">${icons[status]||'·'}</span><span>${text}</span>`;
+      el.innerHTML = `<span class="icon ${status}">${icons[status]||'·'}</span><span>${escapeHtml(text)}</span>`;
       const log = document.getElementById('progressLog');
       log.appendChild(el);
       log.scrollTop = log.scrollHeight;
+    }
+
+    function streamDelta(agentName, delta) {
+      const box = document.getElementById('streamBox');
+      if (_currentStreamAgent !== agentName) {
+        _currentStreamAgent = agentName;
+        const label = document.createElement('div');
+        label.className = 'stream-agent-label';
+        label.textContent = '▶ ' + agentName;
+        box.appendChild(label);
+        _currentStreamEl = document.createElement('div');
+        box.appendChild(_currentStreamEl);
+      }
+      if (_currentStreamEl) {
+        _currentStreamEl.textContent += delta;
+      }
+      box.scrollTop = box.scrollHeight;
     }
 
     function setCaptchaVisible(visible) {
@@ -143,6 +194,10 @@
 
     function handleKey(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
   </script>
 </body>

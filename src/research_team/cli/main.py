@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 from typing import Optional
 import typer
 
@@ -31,7 +32,18 @@ def start(
             await ui.append_agent_message("System", "Research Team が起動しました。")
 
             coordinator = ResearchCoordinator(workspace_dir=workspace, ui=ui)
-            await coordinator.run_interactive(depth=depth, output_format=output_format)
+            try:
+                await coordinator.run_interactive(depth=depth, output_format=output_format)
+            except Exception as exc:
+                tb = traceback.format_exc()
+                try:
+                    await ui.append_agent_message("System", f"致命的エラー: {exc}")
+                    await ui.append_log("running", tb)
+                except Exception:
+                    pass
+                typer.echo(f"Error: {exc}\n{tb}", err=True)
+
+            await asyncio.Event().wait()
 
     asyncio.run(_run())
 

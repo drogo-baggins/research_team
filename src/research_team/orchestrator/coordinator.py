@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import traceback
 from dataclasses import dataclass, field
 
 from research_team.agents.csm import ClientSuccessManager
@@ -10,6 +11,7 @@ from research_team.agents.pm import ProjectManager
 from research_team.agents.team_builder import TeamBuilder
 from research_team.orchestrator.quality_loop import QualityFeedback, QualityLoop
 from research_team.output.markdown import MarkdownOutput
+from research_team.pi_bridge.search_server import SearchServer
 from research_team.pi_bridge.types import AgentEvent
 from research_team.search.factory import SearchEngineFactory
 from research_team.security.sanitizer import sanitize_query
@@ -48,8 +50,16 @@ def _extract_text(events: list[AgentEvent]) -> str:
     return "".join(parts).strip()
 
 
-def _build_research_task(topic: str, feedback: QualityFeedback | None, agent_name: str) -> str:
-    base = f"以下のテーマについて詳細な調査を行い、調査結果をMarkdown形式でまとめてください。\n\nテーマ: {topic}"
+def _build_research_task(
+    topic: str,
+    feedback: QualityFeedback | None,
+    agent_name: str,
+) -> str:
+    base = (
+        f"以下のテーマについて詳細な調査を行い、調査結果をMarkdown形式でまとめてください。"
+        f"\n\nテーマ: {topic}"
+        f"\n\nweb_search および web_fetch ツールを積極的に活用して、最新の情報を収集してください。"
+    )
     if feedback and feedback.improvements:
         improvements = "\n".join(f"- {imp}" for imp in feedback.improvements)
         base += f"\n\n前回の評価で指摘された改善点:\n{improvements}"
@@ -67,34 +77,88 @@ class ResearchCoordinator:
         self._team_builder = TeamBuilder()
         self._search_engine = SearchEngineFactory.create()
         self._quality_loop = QualityLoop()
+        self._search_server: SearchServer | None = None
+        self._search_port: int = 0
+
+    async def _start_search_server(self) -> None:
+        self._search_server = SearchServer(self._search_engine)
+        self._search_port = await self._search_server.start()
+
+    async def _stop_search_server(self) -> None:
+        if self._search_server:
+            await self._search_server.stop()
+            self._search_server = None
+            self._search_port = 0
 
     async def _notify(self, agent: str, message: str) -> None:
         if self._ui:
-            await self._ui.append_agent_message(agent, message)
+            try:
+                await self._ui.append_agent_message(agent, message)
+            except Exception:
+                pass
 
-    async def _collect_agent_output(self, agent, message: str) -> str:
+    async def _log(self, status: str, text: str) -> None:
+        if self._ui:
+            try:
+                await self._ui.append_log(status, text)
+            except Exception:
+                pass
+
+    async def _stream_agent_output(self, agent, message: str, agent_name: str) -> str:
+        parts: list[str] = []
         events: list[AgentEvent] = []
-        async for event in agent.run(message, workspace_dir=self._workspace_dir):
+        await self._log("running", f"{agent_name} が処理中...")
+        async for event in agent.run(
+            message,
+            workspace_dir=self._workspace_dir,
+            search_port=self._search_port,
+        ):
             events.append(event)
-        return _extract_text(events)
+            if event.type == "message_update":
+                ame = event.data.get("assistantMessageEvent", {})
+                if ame.get("type") == "text_delta":
+                    delta = ame.get("delta", "")
+                    if delta:
+                        parts.append(delta)
+                        if self._ui:
+                            try:
+                                await self._ui.stream_delta(agent_name, delta)
+                            except Exception:
+                                pass
+        text = "".join(parts).strip()
+        if not text:
+            text = _extract_text(events)
+        if text:
+            await self._notify(agent_name, text)
+        await self._log("done", f"{agent_name} 完了")
+        return text
 
     async def run(self, request: ResearchRequest) -> ResearchResult:
         topic = sanitize_query(request.topic)
 
         await self._notify("CSM", f"「{topic}」の調査を開始します。チームを編成しています…")
+        await self._log("running", f"テーマ: {topic}")
 
-        pm_output = await self._collect_agent_output(
+        await self._start_search_server()
+        try:
+            return await self._run_research(topic, request)
+        finally:
+            await self._stop_search_server()
+
+    async def _run_research(self, topic: str, request: ResearchRequest) -> ResearchResult:
+        pm_output = await self._stream_agent_output(
             self._pm,
             f"次の調査プロジェクトのWBSと品質目標を定義してください。\n\nテーマ: {topic}\n深度: {request.depth}",
+            "PM",
         )
-        await self._notify("PM", pm_output or "WBSを定義しました。")
 
         example = '[{"name": "経済アナリスト", "expertise": "経済・金融"}]'
-        team_spec = await self._collect_agent_output(
+        team_spec = await self._stream_agent_output(
             self._team_builder,
             f"次のテーマを調査するための専門家チームを3名以内で定義してください。各専門家の名前と専門分野をJSON配列で返してください。\n\nテーマ: {topic}\n\n例: {example}",
+            "TeamBuilder",
         )
-        await self._notify("TeamBuilder", "専門家チームを構成しました。")
+        await self._log("done", "専門家チームを構成しました。")
 
         specialists = self._parse_team_spec(team_spec, topic)
         factory = DynamicAgentFactory()
@@ -108,11 +172,8 @@ class ResearchCoordinator:
 
         combined_content = ""
         iterations_done = 0
-        last_feedback: QualityFeedback | None = None
 
         async def run_research(iteration: int, feedback: QualityFeedback) -> str:
-            nonlocal combined_content, last_feedback
-            last_feedback = feedback
             return await self._run_specialist_pass(factory, topic, feedback)
 
         combined_content = await self._run_specialist_pass(factory, topic, None)
@@ -137,6 +198,7 @@ class ResearchCoordinator:
             "CSM",
             f"調査が完了しました（品質スコア: {final_feedback.score:.2f}）。\n出力: {output_path}",
         )
+        await self._log("done", f"完了: {output_path}")
 
         return ResearchResult(
             content=combined_content,
@@ -154,7 +216,7 @@ class ResearchCoordinator:
         sections: list[str] = []
         for name, agent in factory.agents.items():
             task_message = _build_research_task(topic, feedback, name)
-            section = await self._collect_agent_output(agent, task_message)
+            section = await self._stream_agent_output(agent, task_message, name)
             if section:
                 sections.append(f"## {name}\n\n{section}")
         return "\n\n".join(sections)
@@ -194,11 +256,22 @@ class ResearchCoordinator:
                 "こんにちは！リサーチするテーマを入力してください。"
             )
             topic = await self._ui.wait_for_user_message()
-            await self._ui.append_log("running", f"テーマ: {topic}")
+            await self._log("running", f"テーマ: {topic}")
         else:
             topic = input("テーマを入力してください: ")
 
         request = ResearchRequest(topic=topic, depth=depth, output_format=output_format)
-        result = await self.run(request)
-        if self._ui:
-            await self._ui.append_log("done", f"完了: {result.output_path}")
+        try:
+            result = await self.run(request)
+            if self._ui:
+                await self._log("done", f"完了: {result.output_path}")
+        except Exception as exc:
+            err_msg = f"エラーが発生しました: {exc}"
+            tb = traceback.format_exc()
+            await self._notify("System", err_msg)
+            await self._log("running", err_msg)
+            if self._ui:
+                try:
+                    await self._ui.append_log("running", tb)
+                except Exception:
+                    pass

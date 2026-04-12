@@ -1,3 +1,4 @@
+import asyncio
 import os
 import pytest
 
@@ -48,3 +49,65 @@ async def test_research_coordinator_quick(tmp_path):
 
     content = open(result.output_path, encoding="utf-8").read()
     assert len(content) > 50, f"Output too short: {len(content)} chars"
+
+
+@pytest.mark.asyncio
+async def test_ui_integration(tmp_path):
+    from playwright.async_api import async_playwright
+    from research_team.ui.control_ui import ControlUI
+    from research_team.orchestrator.coordinator import ResearchCoordinator
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        ui = ControlUI(browser)
+        await ui.start()
+
+        messages_appended: list[tuple[str, str]] = []
+        logs_appended: list[tuple[str, str]] = []
+        deltas_received: list[tuple[str, str]] = []
+
+        _orig_append_agent = ui.append_agent_message
+        _orig_append_log = ui.append_log
+        _orig_stream_delta = ui.stream_delta
+
+        async def _spy_agent(sender, text):
+            messages_appended.append((sender, text))
+            await _orig_append_agent(sender, text)
+
+        async def _spy_log(status, text):
+            logs_appended.append((status, text))
+            await _orig_append_log(status, text)
+
+        async def _spy_delta(agent_name, delta):
+            deltas_received.append((agent_name, delta))
+            await _orig_stream_delta(agent_name, delta)
+
+        ui.append_agent_message = _spy_agent
+        ui.append_log = _spy_log
+        ui.stream_delta = _spy_delta
+
+        coordinator = ResearchCoordinator(workspace_dir=str(workspace), ui=ui)
+
+        async def _inject_topic():
+            await asyncio.sleep(0.1)
+            await ui._chat_queue.put("Pythonとは何か、一段落で説明してください")
+
+        asyncio.create_task(_inject_topic())
+
+        await coordinator.run_interactive(depth="quick", output_format="markdown")
+
+        await ui.close()
+
+    senders = [s for s, _ in messages_appended]
+    assert "CSM" in senders, f"CSMメッセージが届かなかった: {senders}"
+
+    statuses = [s for s, _ in logs_appended]
+    assert "running" in statuses, f"runningログが届かなかった: {statuses}"
+
+    assert len(deltas_received) > 0, "ストリーミングデルタが届かなかった"
+
+    output_files = list(workspace.glob("**/*.md"))
+    assert output_files, f"Markdownファイルが生成されなかった: {list(workspace.iterdir())}"

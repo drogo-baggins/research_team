@@ -36,6 +36,11 @@ def test_build_research_task_no_feedback():
     assert "AI倫理" in task
 
 
+def test_build_research_task_includes_web_search_instruction():
+    task = _build_research_task("AI倫理", None, "specialist")
+    assert "web_search" in task
+
+
 def test_build_research_task_with_improvements():
     feedback = QualityFeedback(passed=False, score=0.5, improvements=["詳細が不足"])
     task = _build_research_task("AI倫理", feedback, "specialist")
@@ -96,7 +101,7 @@ async def test_run_sanitizes_dangerous_query():
         await coord.run(request)
 
 
-async def _fake_run(message, workspace_dir=None):
+async def _fake_run(message, workspace_dir=None, search_port=0):
     yield make_text_event("調査結果のサンプルテキスト " * 50)
     yield make_end_event()
 
@@ -105,12 +110,14 @@ async def _fake_run(message, workspace_dir=None):
 async def test_run_returns_research_result(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
 
-    with patch.object(coord._csm, "run", side_effect=_fake_run), \
+    with patch.object(coord, "_start_search_server", new=AsyncMock()), \
+         patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(coord._csm, "run", side_effect=_fake_run), \
          patch.object(coord._pm, "run", side_effect=_fake_run), \
-         patch.object(coord._team_builder, "run", side_effect=lambda msg, **kw: _fake_run(msg)):
+         patch.object(coord._team_builder, "run", side_effect=_fake_run):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
 
-        async def fake_specialist_run(self, message, workspace_dir=None):
+        async def fake_specialist_run(self, message, workspace_dir=None, search_port=0):
             yield make_text_event("専門家の調査結果 " * 100)
             yield make_end_event()
 

@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 import uuid
+from pathlib import Path
 from collections.abc import AsyncIterator
 from research_team.pi_bridge.types import PromptRequest, AgentEvent
 
@@ -27,6 +28,9 @@ def _resolve_pi_bin(name: str) -> list[str]:
     return [name]
 
 
+_EXT_PATH = Path(__file__).parent / "web_search.ts"
+
+
 class PiAgentClient:
     def __init__(
         self,
@@ -34,23 +38,30 @@ class PiAgentClient:
         model: str | None = None,
         pi_bin: str | None = None,
         workspace_dir: str | None = None,
+        search_port: int = 0,
     ):
         self._system_prompt = system_prompt
         self._model = model or os.environ.get("PI_MODEL", "github-copilot/claude-sonnet-4.5")
         self._pi_cmd = _resolve_pi_bin(pi_bin or os.environ.get("PI_AGENT_BIN", "pi"))
         self._workspace_dir = workspace_dir or os.path.join(os.getcwd(), "workspace")
+        self._search_port = search_port
         self._process: asyncio.subprocess.Process | None = None
 
     async def start(self) -> None:
         cmd = [*self._pi_cmd, "--mode", "rpc", "--model", self._model, "--no-session"]
         if self._system_prompt:
             cmd += ["--system-prompt", self._system_prompt]
+        if _EXT_PATH.exists() and self._search_port:
+            cmd += ["--extension", str(_EXT_PATH)]
+
+        env = {**os.environ, "RT_SEARCH_PORT": str(self._search_port)}
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self._workspace_dir,
+            env=env,
         )
 
     async def stop(self) -> None:

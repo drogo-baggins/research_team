@@ -25,15 +25,21 @@ class BaseResearchAgent(ABC):
                 return parts[2].strip() if len(parts) >= 3 else content
         return ""
 
-    def create_client(self, workspace_dir: str | None = None) -> PiAgentClient:
+    def create_client(
+        self, workspace_dir: str | None = None, search_port: int = 0
+    ) -> PiAgentClient:
         return PiAgentClient(
             system_prompt=self._load_system_prompt(),
             workspace_dir=workspace_dir,
+            search_port=search_port,
         )
 
     async def run(
-        self, message: str, workspace_dir: str | None = None
+        self,
+        message: str,
+        workspace_dir: str | None = None,
+        search_port: int = 0,
     ) -> AsyncIterator[AgentEvent]:
-        async with self.create_client(workspace_dir) as client:
+        async with self.create_client(workspace_dir, search_port=search_port) as client:
             async for event in client.prompt(message):
                 yield event
