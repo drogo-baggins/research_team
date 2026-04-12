@@ -101,9 +101,111 @@ async def test_run_sanitizes_dangerous_query():
         await coord.run(request)
 
 
+def make_tool_start_event(tool_name: str, args: dict) -> AgentEvent:
+    return AgentEvent(type="tool_execution_start", data={"toolName": tool_name, "args": args})
+
+
+def make_tool_end_event(tool_name: str, is_error: bool = False) -> AgentEvent:
+    return AgentEvent(type="tool_execution_end", data={"toolName": tool_name, "isError": is_error})
+
+
+def make_turn_start_event(turn_index: int) -> AgentEvent:
+    return AgentEvent(type="turn_start", data={"turnIndex": turn_index})
+
+
+def make_retry_event(attempt: int, error_message: str) -> AgentEvent:
+    return AgentEvent(type="auto_retry_start", data={"attempt": attempt, "errorMessage": error_message})
+
+
+def make_extension_error_event(error: str) -> AgentEvent:
+    return AgentEvent(type="extension_error", data={"error": error})
+
+
 async def _fake_run(message, workspace_dir=None, search_port=0):
     yield make_text_event("調査結果のサンプルテキスト " * 50)
     yield make_end_event()
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_output_logs_tool_execution(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    log_calls: list[tuple[str, str]] = []
+
+    async def fake_log(status: str, text: str) -> None:
+        log_calls.append((status, text))
+
+    coord._log = fake_log
+
+    async def fake_run(message, workspace_dir=None, search_port=0):
+        yield make_turn_start_event(0)
+        yield make_tool_start_event("web_search", {"query": "AI倫理"})
+        yield make_tool_end_event("web_search", is_error=False)
+        yield make_text_event("結果テキスト")
+        yield make_end_event()
+
+    class FakeAgent:
+        def run(self, msg, workspace_dir=None, search_port=0):
+            return fake_run(msg, workspace_dir=workspace_dir, search_port=search_port)
+
+    with patch.object(coord, "_start_search_server", new=AsyncMock()), \
+         patch.object(coord, "_stop_search_server", new=AsyncMock()):
+        result = await coord._stream_agent_output(FakeAgent(), "test", "TestAgent")
+
+    statuses = [s for s, _ in log_calls]
+    texts = [t for _, t in log_calls]
+    assert "running" in statuses
+    assert any("web_search" in t and "AI倫理" in t for t in texts)
+    assert any("web_search" in t and "完了" in t for t in texts)
+    assert result == "結果テキスト"
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_output_logs_tool_error(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    log_calls: list[tuple[str, str]] = []
+
+    async def fake_log(status: str, text: str) -> None:
+        log_calls.append((status, text))
+
+    coord._log = fake_log
+
+    async def fake_run(message, workspace_dir=None, search_port=0):
+        yield make_tool_start_event("web_fetch", {"url": "https://example.com"})
+        yield make_tool_end_event("web_fetch", is_error=True)
+        yield make_end_event()
+
+    class FakeAgent:
+        def run(self, msg, workspace_dir=None, search_port=0):
+            return fake_run(msg, workspace_dir=workspace_dir, search_port=search_port)
+
+    result = await coord._stream_agent_output(FakeAgent(), "test", "TestAgent")
+
+    assert any(s == "error" and "web_fetch" in t for s, t in log_calls)
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_output_logs_retry_and_extension_error(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    log_calls: list[tuple[str, str]] = []
+
+    async def fake_log(status: str, text: str) -> None:
+        log_calls.append((status, text))
+
+    coord._log = fake_log
+
+    async def fake_run(message, workspace_dir=None, search_port=0):
+        yield make_retry_event(1, "timeout")
+        yield make_extension_error_event("connection refused")
+        yield make_end_event()
+
+    class FakeAgent:
+        def run(self, msg, workspace_dir=None, search_port=0):
+            return fake_run(msg, workspace_dir=workspace_dir, search_port=search_port)
+
+    await coord._stream_agent_output(FakeAgent(), "test", "TestAgent")
+
+    assert any("リトライ" in t and "timeout" in t for _, t in log_calls)
+    assert any(s == "error" and "connection refused" in t for s, t in log_calls)
 
 
 @pytest.mark.asyncio

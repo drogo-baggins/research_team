@@ -114,17 +114,46 @@ class ResearchCoordinator:
             search_port=self._search_port,
         ):
             events.append(event)
-            if event.type == "message_update":
-                ame = event.data.get("assistantMessageEvent", {})
-                if ame.get("type") == "text_delta":
-                    delta = ame.get("delta", "")
-                    if delta:
-                        parts.append(delta)
-                        if self._ui:
-                            try:
-                                await self._ui.stream_delta(agent_name, delta)
-                            except Exception:
-                                pass
+            match event.type:
+                case "turn_start":
+                    turn_idx = event.data.get("turnIndex", "")
+                    await self._log("running", f"{agent_name} ターン {turn_idx} 開始")
+                case "tool_execution_start":
+                    tool = event.data.get("toolName", "")
+                    args = event.data.get("args", {})
+                    if tool == "web_search":
+                        q = args.get("query", "")
+                        await self._log("running", f"🔍 {agent_name}: web_search 「{q}」")
+                    elif tool == "web_fetch":
+                        url = args.get("url", "")
+                        await self._log("running", f"🌐 {agent_name}: web_fetch {url}")
+                    else:
+                        await self._log("running", f"⚙️ {agent_name}: {tool}")
+                case "tool_execution_end":
+                    tool = event.data.get("toolName", "")
+                    is_error = event.data.get("isError", False)
+                    if is_error:
+                        await self._log("error", f"{agent_name}: {tool} エラー")
+                    else:
+                        await self._log("done", f"{agent_name}: {tool} 完了")
+                case "auto_retry_start":
+                    attempt = event.data.get("attempt", "")
+                    err = event.data.get("errorMessage", "")
+                    await self._log("running", f"⚠️ {agent_name}: リトライ中 (試行{attempt}) {err}")
+                case "extension_error":
+                    err = event.data.get("error", "")
+                    await self._log("error", f"{agent_name}: Extension エラー: {err}")
+                case "message_update":
+                    ame = event.data.get("assistantMessageEvent", {})
+                    if ame.get("type") == "text_delta":
+                        delta = ame.get("delta", "")
+                        if delta:
+                            parts.append(delta)
+                            if self._ui:
+                                try:
+                                    await self._ui.stream_delta(agent_name, delta)
+                                except Exception:
+                                    pass
         text = "".join(parts).strip()
         if not text:
             text = _extract_text(events)
