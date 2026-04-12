@@ -36,4 +36,5 @@ research-team = "research_team.cli.main:app"
 asyncio_mode = "auto"
 markers = [
     "integration: integration tests requiring external services",
+    "e2e: end-to-end tests requiring pi-agent and github-copilot login",
 ]

@@ -10,15 +10,20 @@ from research_team.pi_bridge.types import PromptRequest, AgentEvent
 
 def _resolve_pi_bin(name: str) -> list[str]:
     if sys.platform == "win32":
-        for ext in (".cmd", ".ps1", ""):
-            candidate = shutil.which(name + ext) or shutil.which(name)
-            if candidate and candidate.endswith(".cmd"):
-                return [candidate]
-            if candidate and candidate.endswith(".ps1"):
-                return ["powershell", "-NonInteractive", "-File", candidate]
-        pi_cmd = shutil.which(name + ".cmd")
-        if pi_cmd:
-            return [pi_cmd]
+        cmd_path = shutil.which(name + ".cmd")
+        if cmd_path:
+            bin_dir = os.path.dirname(cmd_path)
+            node_exe = os.path.join(bin_dir, "node.exe")
+            cli_candidates = [
+                os.path.join(bin_dir, "node_modules", "@mariozechner", "pi-coding-agent", "dist", "cli.js"),
+            ]
+            for cli_js in cli_candidates:
+                if os.path.exists(cli_js):
+                    node = node_exe if os.path.exists(node_exe) else "node"
+                    return [node, cli_js]
+        ps1_path = shutil.which(name + ".ps1")
+        if ps1_path:
+            return ["powershell", "-NonInteractive", "-File", ps1_path]
     return [name]
 
 
@@ -81,7 +86,7 @@ class PiAgentClient:
         while True:
             try:
                 line = await asyncio.wait_for(
-                    self._process.stdout.readline(), timeout=120.0
+                    self._process.stdout.readline(), timeout=300.0
                 )
             except asyncio.TimeoutError:
                 break
