@@ -1,9 +1,25 @@
 import asyncio
 import json
 import os
+import shutil
+import sys
 import uuid
 from collections.abc import AsyncIterator
 from research_team.pi_bridge.types import PromptRequest, AgentEvent
+
+
+def _resolve_pi_bin(name: str) -> list[str]:
+    if sys.platform == "win32":
+        for ext in (".cmd", ".ps1", ""):
+            candidate = shutil.which(name + ext) or shutil.which(name)
+            if candidate and candidate.endswith(".cmd"):
+                return [candidate]
+            if candidate and candidate.endswith(".ps1"):
+                return ["powershell", "-NonInteractive", "-File", candidate]
+        pi_cmd = shutil.which(name + ".cmd")
+        if pi_cmd:
+            return [pi_cmd]
+    return [name]
 
 
 class PiAgentClient:
@@ -16,12 +32,12 @@ class PiAgentClient:
     ):
         self._system_prompt = system_prompt
         self._model = model or os.environ.get("PI_MODEL", "github-copilot/claude-sonnet-4.5")
-        self._pi_bin = pi_bin or os.environ.get("PI_AGENT_BIN", "pi")
+        self._pi_cmd = _resolve_pi_bin(pi_bin or os.environ.get("PI_AGENT_BIN", "pi"))
         self._workspace_dir = workspace_dir or os.path.join(os.getcwd(), "workspace")
         self._process: asyncio.subprocess.Process | None = None
 
     async def start(self) -> None:
-        cmd = [self._pi_bin, "--mode", "rpc", "--model", self._model, "--no-session"]
+        cmd = [*self._pi_cmd, "--mode", "rpc", "--model", self._model, "--no-session"]
         if self._system_prompt:
             cmd += ["--system-prompt", self._system_prompt]
         self._process = await asyncio.create_subprocess_exec(
