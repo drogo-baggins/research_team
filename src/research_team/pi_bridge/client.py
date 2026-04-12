@@ -89,11 +89,20 @@ class PiAgentClient:
             if not line:
                 break
 
+            raw = line.decode().strip()
+            if not raw:
+                continue
+
             try:
-                data = json.loads(line.decode().strip())
-                event = AgentEvent(type=data.get("type", "unknown"), data=data)
-                yield event
-                if event.type == "agent_end":
-                    break
+                data = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+
+            event_type = data.get("type", "unknown")
+            if event_type == "response":
+                continue
+
+            event = AgentEvent(type=event_type, data=data)
+            yield event
+            if event_type == "agent_end":
+                break

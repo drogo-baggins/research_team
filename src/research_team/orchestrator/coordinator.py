@@ -34,11 +34,17 @@ class ResearchResult:
 def _extract_text(events: list[AgentEvent]) -> str:
     parts: list[str] = []
     for event in events:
-        if event.type in ("text", "content_block_delta"):
-            parts.append(event.data.get("text", event.data.get("delta", {}).get("text", "")))
-        elif event.type == "agent_end":
-            if "text" in event.data:
-                parts.append(event.data["text"])
+        if event.type == "message_update":
+            ame = event.data.get("assistantMessageEvent", {})
+            if ame.get("type") == "text_delta":
+                parts.append(ame.get("delta", ""))
+        elif event.type == "message_end":
+            msg = event.data.get("message", {})
+            content = msg.get("content", [])
+            if not parts:
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        parts.append(block.get("text", ""))
     return "".join(parts).strip()
 
 

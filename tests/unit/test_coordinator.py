@@ -12,7 +12,10 @@ from research_team.pi_bridge.types import AgentEvent
 
 
 def make_text_event(text: str) -> AgentEvent:
-    return AgentEvent(type="text", data={"text": text})
+    return AgentEvent(
+        type="message_update",
+        data={"assistantMessageEvent": {"type": "text_delta", "delta": text}},
+    )
 
 
 def make_end_event() -> AgentEvent:
