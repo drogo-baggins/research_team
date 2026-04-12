@@ -126,12 +126,6 @@
       font-size: 13px; font-weight: bold; color: #e0e0e0;
       margin-bottom: 6px;
     }
-    .approval-banner .approval-preview {
-      font-size: 11px; color: #9ca3af; line-height: 1.5;
-      max-height: 80px; overflow-y: auto;
-      background: #0f172a; padding: 6px 8px; border-radius: 6px;
-      margin-bottom: 10px; font-family: monospace; white-space: pre-wrap;
-    }
     .approval-banner .approval-buttons {
       display: flex; gap: 8px;
     }
@@ -180,7 +174,6 @@
         <div class="approval-banner" id="approvalBanner">
           <div class="approval-url" id="approvalUrl"></div>
           <div class="approval-title" id="approvalTitle"></div>
-          <div class="approval-preview" id="approvalPreview"></div>
           <div class="approval-buttons">
             <button class="btn-approve" onclick="signalApproval(true)">✅ 取り込む</button>
             <button class="btn-reject" onclick="signalApproval(false)">❌ スキップ</button>
@@ -234,18 +227,17 @@
       document.getElementById('captchaBanner').classList.toggle('visible', visible);
     }
 
-    function setApprovalVisible(visible, url, title, preview) {
+    function setApprovalVisible(visible, url, title) {
       const banner = document.getElementById('approvalBanner');
       if (visible) {
         document.getElementById('approvalUrl').textContent = url;
         document.getElementById('approvalTitle').textContent = title;
-        document.getElementById('approvalPreview').textContent = preview;
       }
       banner.classList.toggle('visible', visible);
     }
 
     function signalApproval(approved) {
-      setApprovalVisible(false, '', '', '');
+      setApprovalVisible(false, '', '');
       window.__rt_signal({ type: 'approval_done', approved: approved });
     }
 

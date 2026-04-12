@@ -66,15 +66,14 @@ class ControlUI:
             await self._page.evaluate("setCaptchaVisible(true)")
         await self._captcha_event.wait()
 
-    async def request_content_approval(self, url: str, title: str, preview: str) -> bool:
+    async def request_content_approval(self, url: str, title: str) -> bool:
         self._approval_event.clear()
         self._approval_result = False
         if self._is_alive():
             safe_url = json.dumps(url)
             safe_title = json.dumps(title)
-            safe_preview = json.dumps(preview[:500])
             await self._page.evaluate(
-                f"setApprovalVisible(true, {safe_url}, {safe_title}, {safe_preview})"
+                f"setApprovalVisible(true, {safe_url}, {safe_title})"
             )
         await self._approval_event.wait()
         return self._approval_result

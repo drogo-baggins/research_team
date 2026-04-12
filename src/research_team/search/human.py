@@ -54,10 +54,9 @@ class HumanSearchEngine(SearchEngine):
     async def _request_approval(self, page: Page) -> bool:
         if self._control_ui is None:
             return True
-        url = page.url
         title = await page.title()
-        preview = await self._extract_content(page)
-        return await self._control_ui.request_content_approval(url, title, preview)
+        url = page.url
+        return await self._control_ui.request_content_approval(url, title)
 
     async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         search_url = f"{self._search_engine_url}{query.replace(' ', '+')}"
@@ -97,9 +96,9 @@ class HumanSearchEngine(SearchEngine):
     async def fetch(self, url: str) -> SearchResult:
         page = await self._navigate_and_wait(url)
         await self._handle_captcha_if_needed(page)
-        await self._request_approval(page)
+        approved = await self._request_approval(page)
         title = await page.title()
-        content = await self._extract_content(page)
+        content = await self._extract_content(page) if approved else ""
         await page.close()
         return SearchResult(url=url, title=title, content=content, source="human")
 
