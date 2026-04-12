@@ -15,13 +15,15 @@ class PiAgentClient:
         workspace_dir: str | None = None,
     ):
         self._system_prompt = system_prompt
-        self._model = model or os.environ.get("PI_MODEL", "claude-sonnet-4-5")
+        self._model = model or os.environ.get("PI_MODEL", "github-copilot/claude-sonnet-4.5")
         self._pi_bin = pi_bin or os.environ.get("PI_AGENT_BIN", "pi")
         self._workspace_dir = workspace_dir or os.path.join(os.getcwd(), "workspace")
         self._process: asyncio.subprocess.Process | None = None
 
     async def start(self) -> None:
-        cmd = [self._pi_bin, "--mode", "rpc", "--model", self._model]
+        cmd = [self._pi_bin, "--mode", "rpc", "--model", self._model, "--no-session"]
+        if self._system_prompt:
+            cmd += ["--system-prompt", self._system_prompt]
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
