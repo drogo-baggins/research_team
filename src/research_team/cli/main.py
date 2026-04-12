@@ -5,7 +5,7 @@ import typer
 app = typer.Typer(help="Research Team Agent System")
 
 
-@app.command()
+@app.command("start")
 def start(
     depth: str = typer.Option("standard", help="調査の深さ: quick|standard|deep"),
     search_mode: Optional[str] = typer.Option(None, help="検索モード: human|tavily|serper"),
@@ -34,6 +34,12 @@ def start(
             await coordinator.run_interactive(depth=depth, output_format=output_format)
 
     asyncio.run(_run())
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(start)
 
 
 if __name__ == "__main__":
