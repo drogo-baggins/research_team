@@ -31,3 +31,9 @@ dev = [
 
 [project.scripts]
 research-team = "research_team.cli.main:app"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "integration: integration tests requiring external services",
+]
