@@ -176,3 +176,31 @@ def test_clear_active_id(mgr):
     mgr.set_active_id(project.id)
     mgr.set_active_id(None)
     assert mgr.get_active_id() is None
+
+
+def test_switch_changes_active_project(mgr):
+    p1 = mgr.init("Project 1")
+    p2 = mgr.init("Project 2")
+    mgr.switch(p1.id)
+    assert mgr.get_active_id() == p1.id
+    mgr.switch(p2.id)
+    assert mgr.get_active_id() == p2.id
+
+
+def test_switch_to_archived_raises(mgr):
+    project = mgr.init("Archived project")
+    mgr.archive(project.id)
+    with pytest.raises(PermissionError, match="archived"):
+        mgr.switch(project.id)
+
+
+def test_switch_to_nonexistent_raises(mgr):
+    with pytest.raises(FileNotFoundError):
+        mgr.switch("ghost-id")
+
+
+def test_switch_returns_project(mgr):
+    project = mgr.init("Return test")
+    result = mgr.switch(project.id)
+    assert result.id == project.id
+    assert result.topic == "Return test"

@@ -111,6 +111,10 @@ class ProjectManager:
         tmp.write_text(project_id, encoding="utf-8")
         tmp.replace(self._active_file)
 
+    def switch(self, project_id: str) -> Project:
+        self.set_active_id(project_id)
+        return self.load(project_id)
+
     def create_checkpoint(self, project_id: str, label: str) -> str:
         source = self._meta_path(project_id)
         if not source.exists():
