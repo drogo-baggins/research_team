@@ -38,5 +38,4 @@ asyncio_mode = "auto"
 markers = [
     "integration: integration tests requiring external services",
     "e2e: end-to-end tests requiring pi-agent and github-copilot login",
-    "interactive: tests requiring human interaction (deselect with '-m \"not interactive\"')",
 ]

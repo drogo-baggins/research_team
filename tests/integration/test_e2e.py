@@ -2,9 +2,8 @@ import asyncio
 import os
 import pytest
 
-pytestmark = pytest.mark.e2e
 
-
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_pi_agent_client_prompt(tmp_path):
     from research_team.pi_bridge.client import PiAgentClient
@@ -27,6 +26,7 @@ async def test_pi_agent_client_prompt(tmp_path):
     assert len(text) > 0, f"Expected non-empty response, got: {text!r}"
 
 
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_research_coordinator_quick(tmp_path):
     from research_team.orchestrator.coordinator import ResearchCoordinator, ResearchRequest
@@ -51,7 +51,6 @@ async def test_research_coordinator_quick(tmp_path):
     assert len(content) > 50, f"Output too short: {len(content)} chars"
 
 
-@pytest.mark.interactive
 @pytest.mark.asyncio
 async def test_ui_integration(tmp_path, dummy_search_server, monkeypatch):
     from playwright.async_api import async_playwright
