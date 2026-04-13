@@ -2,6 +2,8 @@ import asyncio
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 from research_team.search.base import SearchEngine, SearchResult
 
+_CAPTCHA_SIGNALS = ["captcha", "challenge", "robot", "blocked", "verify", "sorry"]
+
 
 class HumanSearchEngine(SearchEngine):
     def __init__(
@@ -29,6 +31,9 @@ class HumanSearchEngine(SearchEngine):
     def _timeout(self, default_ms: int) -> int:
         return 0 if self._no_timeout else default_ms
 
+    def _is_captcha_page(self, url: str, title: str) -> bool:
+        return any(s in url.lower() or s in title.lower() for s in _CAPTCHA_SIGNALS)
+
     async def _navigate_and_wait(self, url: str, timeout_ms: int = 15_000) -> Page:
         context = await self._get_context()
         page = await context.new_page()
@@ -39,6 +44,10 @@ class HumanSearchEngine(SearchEngine):
             pass
         return page
 
+    async def _wait_for_captcha_resolution(self, page: Page) -> None:
+        while self._is_captcha_page(page.url, await page.title()):
+            await asyncio.sleep(2)
+
     async def _extract_content(self, page: Page) -> str:
         try:
             text = await page.inner_text("body")
@@ -48,13 +57,11 @@ class HumanSearchEngine(SearchEngine):
             return ""
 
     async def _handle_captcha_if_needed(self, page: Page) -> None:
-        if self._control_ui is None:
-            return
-        title = await page.title()
-        url = page.url
-        captcha_signals = ["captcha", "challenge", "robot", "blocked", "verify"]
-        if any(s in title.lower() or s in url.lower() for s in captcha_signals):
-            await self._control_ui.request_captcha()
+        if self._is_captcha_page(page.url, await page.title()):
+            if self._control_ui is not None:
+                await self._control_ui.request_captcha()
+            if self._no_timeout:
+                await self._wait_for_captcha_resolution(page)
 
     async def _request_approval(self, page: Page) -> bool:
         if self._control_ui is None:
@@ -112,3 +119,4 @@ class HumanSearchEngine(SearchEngine):
             await self._context.close()
         if self._playwright:
             await self._playwright.stop()
+
