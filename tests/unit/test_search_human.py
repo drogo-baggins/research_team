@@ -16,91 +16,77 @@ def test_search_result_model():
 
 
 @pytest.mark.asyncio
-async def test_human_search_engine_is_search_engine():
-    engine = HumanSearchEngine()
-    assert isinstance(engine, SearchEngine)
-
-
-@pytest.mark.asyncio
-async def test_human_search_returns_results():
-    mock_page = AsyncMock()
-    mock_page.title = AsyncMock(return_value="Test Page")
-    mock_page.query_selector_all = AsyncMock(return_value=[])
-    mock_page.url = "https://example.com/result"
-
-    engine = HumanSearchEngine()
-    with patch.object(engine, "_navigate_and_wait", return_value=mock_page):
-        with patch.object(engine, "_extract_content", return_value="Some content"):
-            results = await engine.search("test query", max_results=1)
-
-    assert len(results) >= 0
-    for r in results:
-        assert isinstance(r, SearchResult)
-
-
-@pytest.mark.asyncio
-async def test_approval_skips_rejected_pages():
+async def test_search_returns_search_results_page_as_single_result():
     mock_ui = AsyncMock()
-    mock_ui.request_content_approval = AsyncMock(return_value=False)
+    mock_ui.wait_for_capture = AsyncMock(return_value=True)
 
-    mock_link = AsyncMock()
-    mock_link.get_attribute = AsyncMock(return_value="https://example.com/page1")
-
-    mock_page = AsyncMock()
-    mock_page.title = AsyncMock(return_value="Some Title")
-    mock_page.url = "https://example.com/page1"
-    mock_page.query_selector_all = AsyncMock(return_value=[mock_link])
+    mock_search_page = AsyncMock()
+    mock_search_page.url = "https://www.google.com/search?q=python+asyncio"
+    mock_search_page.title = AsyncMock(return_value="python asyncio - Google Search")
+    mock_search_page.inner_text = AsyncMock(return_value="Google search results content")
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate_and_wait", side_effect=[mock_page, mock_page]):
-        with patch.object(engine, "_extract_content", return_value="content"):
-            results = await engine.search("test", max_results=1)
+    with patch.object(engine, "_navigate", return_value=mock_search_page):
+        results = await engine.search("python asyncio", max_results=5)
+
+    assert len(results) == 1
+    assert results[0].url == "https://www.google.com/search?q=python+asyncio"
+    assert results[0].source == "human"
+    assert "Google search results content" in results[0].content
+    mock_ui.wait_for_capture.assert_called_once_with("https://www.google.com/search?q=python+asyncio")
+
+
+@pytest.mark.asyncio
+async def test_search_returns_empty_when_user_skips_results_page():
+    mock_ui = AsyncMock()
+    mock_ui.wait_for_capture = AsyncMock(return_value=False)
+
+    mock_search_page = AsyncMock()
+    mock_search_page.url = "https://www.google.com/search?q=test"
+    mock_search_page.title = AsyncMock(return_value="test - Google Search")
+    mock_search_page.inner_text = AsyncMock(return_value="some content")
+
+    engine = HumanSearchEngine(control_ui=mock_ui)
+    with patch.object(engine, "_navigate", return_value=mock_search_page):
+        results = await engine.search("test", max_results=5)
 
     assert results == []
 
 
 @pytest.mark.asyncio
-async def test_approval_includes_approved_pages():
-    mock_ui = AsyncMock()
-    mock_ui.request_content_approval = AsyncMock(return_value=True)
-
-    mock_link = AsyncMock()
-    mock_link.get_attribute = AsyncMock(return_value="https://example.com/page1")
-
-    mock_search_page = AsyncMock()
-    mock_search_page.url = "https://google.com/search"
-    mock_search_page.title = AsyncMock(return_value="Search")
-    mock_search_page.query_selector_all = AsyncMock(return_value=[mock_link])
-
-    mock_result_page = AsyncMock()
-    mock_result_page.url = "https://example.com/page1"
-    mock_result_page.title = AsyncMock(return_value="Result Title")
-
-    engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate_and_wait", side_effect=[mock_search_page, mock_result_page]):
-        with patch.object(engine, "_extract_content", return_value="rich content here"):
-            results = await engine.search("test", max_results=1)
-
-    assert len(results) == 1
-    assert results[0].url == "https://example.com/page1"
-
-
-@pytest.mark.asyncio
 async def test_fetch_calls_approval():
     mock_ui = AsyncMock()
-    mock_ui.request_content_approval = AsyncMock(return_value=True)
+    mock_ui.wait_for_capture = AsyncMock(return_value=True)
 
     mock_page = AsyncMock()
     mock_page.url = "https://example.com/article"
     mock_page.title = AsyncMock(return_value="Article Title")
+    mock_page.inner_text = AsyncMock(return_value="article body")
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate_and_wait", return_value=mock_page):
-        with patch.object(engine, "_extract_content", return_value="article body"):
-            result = await engine.fetch("https://example.com/article")
+    with patch.object(engine, "_navigate", return_value=mock_page):
+        result = await engine.fetch("https://example.com/article")
 
-    mock_ui.request_content_approval.assert_called_once()
+    mock_ui.wait_for_capture.assert_called_once_with("https://example.com/article")
     assert result.url == "https://example.com/article"
+    assert result.content == "article body"
+
+
+@pytest.mark.asyncio
+async def test_fetch_raises_on_rejection():
+    mock_ui = AsyncMock()
+    mock_ui.wait_for_capture = AsyncMock(return_value=False)
+
+    mock_page = AsyncMock()
+    mock_page.url = "https://example.com/article"
+    mock_page.title = AsyncMock(return_value="Article")
+
+    engine = HumanSearchEngine(control_ui=mock_ui)
+    with patch.object(engine, "_navigate", return_value=mock_page):
+        result = await engine.fetch("https://example.com/article")
+
+    assert result.url == "https://example.com/article"
+    assert result.content == ""
 
 
 @pytest.mark.asyncio
@@ -108,10 +94,55 @@ async def test_no_approval_needed_without_ui():
     mock_page = AsyncMock()
     mock_page.url = "https://example.com/article"
     mock_page.title = AsyncMock(return_value="Article")
+    mock_page.inner_text = AsyncMock(return_value="body text")
 
     engine = HumanSearchEngine(control_ui=None)
-    with patch.object(engine, "_navigate_and_wait", return_value=mock_page):
-        with patch.object(engine, "_extract_content", return_value="body"):
-            result = await engine.fetch("https://example.com/article")
+    with patch.object(engine, "_navigate", return_value=mock_page):
+        result = await engine.fetch("https://example.com/article")
 
-    assert result.content == "body"
+    assert result.content == "body text"
+
+
+class TestHumanSearchEngineSearchParsed:
+    @pytest.mark.asyncio
+    async def test_search_returns_multiple_results_when_parser_finds_links(self):
+        mock_html = (
+            'Title1 /url?q=https://example.com/article1&sa=U snippet1 '
+            '/url?q=https://example.com/article2&sa=U snippet2'
+        )
+
+        engine = HumanSearchEngine()
+        engine._control_ui = None
+
+        mock_page = AsyncMock()
+        mock_page.url = "https://www.google.com/search?q=test"
+        mock_page.inner_text = AsyncMock(return_value=mock_html)
+        mock_page.title = AsyncMock(return_value="test - Google Search")
+        mock_page.close = AsyncMock()
+
+        with patch.object(engine, "_navigate", return_value=mock_page):
+            results = await engine.search("test query", max_results=5)
+
+        assert len(results) >= 2
+        urls = [r.url for r in results]
+        assert "https://example.com/article1" in urls
+        assert "https://example.com/article2" in urls
+
+    @pytest.mark.asyncio
+    async def test_search_falls_back_to_single_result_when_parser_finds_nothing(self):
+        mock_html = "検索結果が見つかりませんでした"
+
+        engine = HumanSearchEngine()
+        engine._control_ui = None
+
+        mock_page = AsyncMock()
+        mock_page.url = "https://www.google.com/search?q=test"
+        mock_page.inner_text = AsyncMock(return_value=mock_html)
+        mock_page.title = AsyncMock(return_value="test - Google Search")
+        mock_page.close = AsyncMock()
+
+        with patch.object(engine, "_navigate", return_value=mock_page):
+            results = await engine.search("test query", max_results=5)
+
+        assert len(results) == 1
+        assert results[0].source == "human"

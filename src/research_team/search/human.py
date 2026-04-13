@@ -1,9 +1,15 @@
 import asyncio
-from playwright.async_api import async_playwright, Page, Browser, BrowserContext
+import logging
+from playwright.async_api import async_playwright, Page, Browser, BrowserContext, Error as PlaywrightError
 from research_team.search.base import SearchEngine, SearchResult
+from research_team.search.google_parser import GoogleSearchParser
+
+logger = logging.getLogger(__name__)
 
 
 class HumanSearchEngine(SearchEngine):
+    _parser = GoogleSearchParser()
+
     def __init__(
         self,
         search_engine_url: str = "https://www.google.com/search?q=",
@@ -20,81 +26,120 @@ class HumanSearchEngine(SearchEngine):
     async def _get_context(self) -> BrowserContext:
         if self._context is None:
             if self._browser is None:
-                self._playwright = await async_playwright().start()
-                self._browser = await self._playwright.chromium.launch(headless=False)
-            self._context = await self._browser.new_context()
+                try:
+                    self._playwright = await async_playwright().start()
+                    self._browser = await self._playwright.chromium.launch(headless=False)
+                except PlaywrightError as exc:
+                    logger.error("HumanSearchEngine: failed to launch browser: %s", exc)
+                    raise
+            try:
+                self._context = await self._browser.new_context()
+            except PlaywrightError as exc:
+                logger.error("HumanSearchEngine: failed to create browser context: %s", exc)
+                raise
         return self._context
 
-    async def _navigate_and_wait(self, url: str) -> Page:
+    async def _navigate(self, url: str) -> Page:
         context = await self._get_context()
-        page = await context.new_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=0)
         try:
-            await page.wait_for_load_state("networkidle", timeout=5_000)
-        except Exception:
-            pass
-        return page
+            page = await context.new_page()
+            await page.goto(url, wait_until="commit", timeout=0)
+            return page
+        except PlaywrightError as exc:
+            logger.warning("HumanSearchEngine._navigate: failed for %s: %s", url, exc)
+            raise
 
-    async def _extract_content(self, page: Page) -> str:
-        try:
-            text = await page.inner_text("body")
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-            return "\n".join(lines[:500])
-        except Exception:
-            return ""
-
-    async def _request_approval(self, page: Page) -> bool:
-        if self._control_ui is None:
-            return True
-        title = await page.title()
-        url = page.url
-        return await self._control_ui.request_content_approval(url, title)
+    async def _wait_and_extract(self, page: Page) -> str:
+        if self._control_ui is not None:
+            approved = await self._control_ui.wait_for_capture(page.url)
+            if not approved:
+                raise PermissionError(f"User skipped: {page.url}")
+        text = await page.inner_text("body")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        return "\n".join(lines[:500])
 
     async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         async with self._lock:
             search_url = f"{self._search_engine_url}{query.replace(' ', '+')}"
-            page = await self._navigate_and_wait(search_url)
-
-            links = await page.query_selector_all("a[href^='http']:not([href*='google'])")
-            results: list[SearchResult] = []
-
-            for link in links[:max_results * 2]:
-                href = await link.get_attribute("href")
-                if not href or not href.startswith("http"):
-                    continue
+            logger.warning("HumanSearchEngine.search: navigating to %s", search_url)
+            try:
+                page = await self._navigate(search_url)
+            except PlaywrightError as e:
+                logger.warning("HumanSearchEngine.search: navigation failed (browser closed?): %s", e)
+                return []
+            logger.warning("HumanSearchEngine.search: page opened, url=%s, control_ui=%s", page.url, self._control_ui)
+            try:
+                content = await self._wait_and_extract(page)
+            except PermissionError:
+                logger.info("User skipped search results page for query: %s", query)
                 try:
-                    result_page = await self._navigate_and_wait(href)
-                    approved = await self._request_approval(result_page)
-                    if not approved:
-                        await result_page.close()
-                        continue
-                    title = await result_page.title()
-                    content = await self._extract_content(result_page)
-                    await result_page.close()
-
-                    if content:
-                        results.append(SearchResult(
-                            url=href, title=title, content=content, source="human",
-                        ))
-                        if len(results) >= max_results:
-                            break
+                    await page.close()
                 except Exception:
-                    continue
+                    pass
+                return []
+            except PlaywrightError as e:
+                logger.warning("HumanSearchEngine.search: page closed during extraction: %s", e)
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+                return []
+            try:
+                title = await page.title()
+            except PlaywrightError:
+                title = query
+            try:
+                await page.close()
+            except Exception:
+                pass
 
-            await page.close()
-            return results
+        parsed = self._parser.parse(content, max_results=max_results)
+        if parsed:
+            logger.info(
+                "HumanSearchEngine.search: parsed %d results from Google SERP",
+                len(parsed),
+            )
+            return parsed
+
+        logger.warning(
+            "HumanSearchEngine.search: parser returned 0 results, falling back to raw page"
+        )
+        return [SearchResult(url=search_url, title=title, content=content, source="human")]
 
     async def fetch(self, url: str) -> SearchResult:
         async with self._lock:
-            page = await self._navigate_and_wait(url)
-            approved = await self._request_approval(page)
-            title = await page.title()
-            content = await self._extract_content(page) if approved else ""
-            await page.close()
+            try:
+                page = await self._navigate(url)
+            except PlaywrightError as e:
+                logger.warning("HumanSearchEngine.fetch: navigation failed (browser closed?): %s", e)
+                return SearchResult(url=url, title="", content="", source="human")
+            try:
+                content = await self._wait_and_extract(page)
+            except (PermissionError, PlaywrightError) as e:
+                logger.warning("HumanSearchEngine.fetch: page closed during extraction: %s", e)
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+                return SearchResult(url=url, title="", content="", source="human")
+            try:
+                title = await page.title()
+            except PlaywrightError:
+                title = url
+            try:
+                await page.close()
+            except Exception:
+                pass
             return SearchResult(url=url, title=title, content=content, source="human")
 
     async def close(self) -> None:
-        if self._context:
-            await self._context.close()
-        if self._playwright:
-            await self._playwright.stop()
+        try:
+            if self._context:
+                await self._context.close()
+        except Exception as exc:
+            logger.warning("HumanSearchEngine.close: context.close() failed: %s", exc)
+        try:
+            if self._playwright:
+                await self._playwright.stop()
+        except Exception as exc:
+            logger.warning("HumanSearchEngine.close: playwright.stop() failed: %s", exc)
