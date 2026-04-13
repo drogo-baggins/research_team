@@ -138,3 +138,41 @@ def test_init_project_not_in_active_yet(mgr):
     """init() creates project but does NOT auto-activate it"""
     project = mgr.init("Test")
     assert mgr.get_active_id() != project.id
+
+
+def test_active_id_initially_none(mgr):
+    assert mgr.get_active_id() is None
+
+
+def test_set_and_get_active_id(mgr):
+    project = mgr.init("Active test")
+    mgr.set_active_id(project.id)
+    assert mgr.get_active_id() == project.id
+
+
+def test_active_id_persists_across_instances(tmp_path):
+    mgr1 = ProjectManager(workspace_dir=tmp_path)
+    project = mgr1.init("Persist test")
+    mgr1.set_active_id(project.id)
+
+    mgr2 = ProjectManager(workspace_dir=tmp_path)
+    assert mgr2.get_active_id() == project.id
+
+
+def test_set_active_id_rejects_nonexistent(mgr):
+    with pytest.raises(FileNotFoundError):
+        mgr.set_active_id("nonexistent-id")
+
+
+def test_set_active_id_rejects_archived(mgr):
+    project = mgr.init("Archived")
+    mgr.archive(project.id)
+    with pytest.raises(PermissionError, match="archived"):
+        mgr.set_active_id(project.id)
+
+
+def test_clear_active_id(mgr):
+    project = mgr.init("Clear test")
+    mgr.set_active_id(project.id)
+    mgr.set_active_id(None)
+    assert mgr.get_active_id() is None

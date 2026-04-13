@@ -12,6 +12,7 @@ class ProjectManager:
         self._workspace = Path(workspace_dir or "workspace").resolve()
         self._projects_dir = self._workspace / "projects"
         self._projects_dir.mkdir(parents=True, exist_ok=True)
+        self._active_file = self._workspace / ".active_project"
 
     def _project_dir(self, project_id: str) -> Path:
         return self._projects_dir / project_id
@@ -92,6 +93,23 @@ class ProjectManager:
         project = Project(topic=topic)
         self.save(project)
         return project
+
+    def get_active_id(self) -> str | None:
+        if not self._active_file.exists():
+            return None
+        content = self._active_file.read_text(encoding="utf-8").strip()
+        return content if content else None
+
+    def set_active_id(self, project_id: str | None) -> None:
+        if project_id is None:
+            self._active_file.write_text("", encoding="utf-8")
+            return
+        project = self.load(project_id)
+        if project.status == ProjectStatus.ARCHIVED:
+            raise PermissionError(f"Project '{project_id}' is archived and cannot be activated")
+        tmp = self._active_file.with_suffix(".tmp")
+        tmp.write_text(project_id, encoding="utf-8")
+        tmp.replace(self._active_file)
 
     def create_checkpoint(self, project_id: str, label: str) -> str:
         source = self._meta_path(project_id)
