@@ -2,9 +2,10 @@ import pytest
 from research_team.search.human import HumanSearchEngine
 
 
-@pytest.mark.skip(reason="Manual E2E test - requires real browser")
+@pytest.mark.interactive
+@pytest.mark.asyncio
 async def test_human_search_google():
-    engine = HumanSearchEngine()
+    engine = HumanSearchEngine(no_timeout=True)
     try:
         results = await engine.search("Python asyncio tutorial", max_results=2)
         assert len(results) > 0, "検索結果が0件"
@@ -16,9 +17,10 @@ async def test_human_search_google():
         await engine.close()
 
 
-@pytest.mark.skip(reason="Manual E2E test - requires real browser")
+@pytest.mark.interactive
+@pytest.mark.asyncio
 async def test_human_fetch_url():
-    engine = HumanSearchEngine()
+    engine = HumanSearchEngine(no_timeout=True)
     try:
         result = await engine.fetch("https://www.python.org")
         assert "Python" in result.title

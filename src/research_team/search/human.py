@@ -9,10 +9,12 @@ class HumanSearchEngine(SearchEngine):
         search_engine_url: str = "https://www.google.com/search?q=",
         browser: Browser | None = None,
         control_ui=None,
+        no_timeout: bool = False,
     ):
         self._search_engine_url = search_engine_url
         self._browser = browser
         self._control_ui = control_ui
+        self._no_timeout = no_timeout
         self._playwright = None
         self._context: BrowserContext | None = None
 
@@ -24,10 +26,13 @@ class HumanSearchEngine(SearchEngine):
             self._context = await self._browser.new_context()
         return self._context
 
+    def _timeout(self, default_ms: int) -> int:
+        return 0 if self._no_timeout else default_ms
+
     async def _navigate_and_wait(self, url: str, timeout_ms: int = 15_000) -> Page:
         context = await self._get_context()
         page = await context.new_page()
-        await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+        await page.goto(url, wait_until="domcontentloaded", timeout=self._timeout(timeout_ms))
         try:
             await page.wait_for_load_state("networkidle", timeout=5_000)
         except Exception:
