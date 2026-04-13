@@ -80,6 +80,6 @@ class TestGoogleSearchParser:
         """
         parser = GoogleSearchParser()
         results = parser.parse(html, max_results=5)
-        if results:
-            assert "google.com" not in results[0].url
-            assert "example.com" in results[0].url
+        assert len(results) == 1
+        assert results[0].url == "https://example.com/target?id=1"
+        assert "google.com" not in results[0].url
