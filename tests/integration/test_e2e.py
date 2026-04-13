@@ -68,11 +68,11 @@ async def test_ui_integration(tmp_path):
 
         messages_appended: list[tuple[str, str]] = []
         logs_appended: list[tuple[str, str]] = []
-        deltas_received: list[tuple[str, str]] = []
+        approval_calls: list[tuple[str, str]] = []
 
         _orig_append_agent = ui.append_agent_message
         _orig_append_log = ui.append_log
-        _orig_stream_delta = ui.stream_delta
+        _orig_request_approval = ui.request_content_approval
 
         async def _spy_agent(sender, text):
             messages_appended.append((sender, text))
@@ -82,13 +82,13 @@ async def test_ui_integration(tmp_path):
             logs_appended.append((status, text))
             await _orig_append_log(status, text)
 
-        async def _spy_delta(agent_name, delta):
-            deltas_received.append((agent_name, delta))
-            await _orig_stream_delta(agent_name, delta)
+        async def _spy_approval(url, title):
+            approval_calls.append((url, title))
+            return await _orig_request_approval(url, title)
 
         ui.append_agent_message = _spy_agent
         ui.append_log = _spy_log
-        ui.stream_delta = _spy_delta
+        ui.request_content_approval = _spy_approval
 
         coordinator = ResearchCoordinator(workspace_dir=str(workspace), ui=ui)
 
@@ -108,7 +108,9 @@ async def test_ui_integration(tmp_path):
     statuses = [s for s, _ in logs_appended]
     assert "running" in statuses, f"runningログが届かなかった: {statuses}"
 
-    assert len(deltas_received) > 0, "ストリーミングデルタが届かなかった"
+    assert len(approval_calls) >= 1, (
+        f"承認バナーが一度も表示されなかった（web_search/web_fetchが呼ばれていない）: approval_calls={approval_calls}"
+    )
 
     output_files = list(workspace.glob("**/*.md"))
     assert output_files, f"Markdownファイルが生成されなかった: {list(workspace.iterdir())}"
