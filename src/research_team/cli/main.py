@@ -2,6 +2,9 @@ import asyncio
 import traceback
 from typing import Optional
 import typer
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = typer.Typer(help="Research Team Agent System")
 
