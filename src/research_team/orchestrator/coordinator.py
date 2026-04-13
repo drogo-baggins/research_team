@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 
 from research_team.agents.csm import ClientSuccessManager
 from research_team.agents.dynamic.factory import DynamicAgentFactory
-from research_team.agents.pm import ProjectManager
+from research_team.agents.pm import ProjectManager as PMAgent
 from research_team.agents.team_builder import TeamBuilder
+from research_team.project.manager import ProjectManager as ProjectFileManager
 from research_team.orchestrator.quality_loop import QualityFeedback, QualityLoop
 from research_team.output.markdown import MarkdownOutput
 from research_team.pi_bridge.search_server import SearchServer
@@ -73,12 +74,19 @@ class ResearchCoordinator:
         self._workspace_dir = workspace_dir or os.path.join(os.getcwd(), "workspace")
         self._ui = ui
         self._csm = ClientSuccessManager()
-        self._pm = ProjectManager()
+        self._pm_agent = PMAgent()
+        self._project_manager = ProjectFileManager(workspace_dir=self._workspace_dir)
         self._team_builder = TeamBuilder()
         self._search_engine = SearchEngineFactory.create(control_ui=ui)
         self._quality_loop = QualityLoop()
         self._search_server: SearchServer | None = None
         self._search_port: int = 0
+
+    def _get_agent_workspace(self) -> str:
+        active_id = self._project_manager.get_active_id()
+        if active_id:
+            return str(self._project_manager.project_files_dir(active_id))
+        return self._workspace_dir
 
     async def _start_search_server(self) -> None:
         self._search_server = SearchServer(self._search_engine)
@@ -110,7 +118,7 @@ class ResearchCoordinator:
         await self._log("running", f"{agent_name} が処理中...")
         async for event in agent.run(
             message,
-            workspace_dir=self._workspace_dir,
+            workspace_dir=self._get_agent_workspace(),
             search_port=self._search_port,
         ):
             events.append(event)
@@ -176,7 +184,7 @@ class ResearchCoordinator:
 
     async def _run_research(self, topic: str, request: ResearchRequest) -> ResearchResult:
         pm_output = await self._stream_agent_output(
-            self._pm,
+            self._pm_agent,
             f"次の調査プロジェクトのWBSと品質目標を定義してください。\n\nテーマ: {topic}\n深度: {request.depth}",
             "PM",
         )
@@ -219,7 +227,7 @@ class ResearchCoordinator:
             on_iteration=run_research,
         )
 
-        output_path = MarkdownOutput(self._workspace_dir).save(
+        output_path = MarkdownOutput(self._get_agent_workspace()).save(
             combined_content, topic, report_type="business"
         )
 

@@ -215,7 +215,7 @@ async def test_run_returns_research_result(tmp_path):
     with patch.object(coord, "_start_search_server", new=AsyncMock()), \
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
          patch.object(coord._csm, "run", side_effect=_fake_run), \
-         patch.object(coord._pm, "run", side_effect=_fake_run), \
+         patch.object(coord._pm_agent, "run", side_effect=_fake_run), \
          patch.object(coord._team_builder, "run", side_effect=_fake_run):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
 
@@ -230,3 +230,24 @@ async def test_run_returns_research_result(tmp_path):
     assert result.quality_score > 0
     assert result.output_path.endswith(".md")
     assert result.iterations >= 1
+
+
+def test_coordinator_passes_workspace_to_project_manager(tmp_path):
+    """Bug fix: ProjectManager must use same workspace_dir as coordinator"""
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    assert coord._project_manager._workspace == tmp_path
+
+
+def test_coordinator_uses_project_files_dir_when_active(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    project = coord._project_manager.init("Test project")
+    coord._project_manager.switch(project.id)
+
+    agent_workspace = coord._get_agent_workspace()
+    assert agent_workspace == str(coord._project_manager.project_files_dir(project.id))
+    assert agent_workspace != str(tmp_path)
+
+
+def test_coordinator_falls_back_to_workspace_root_when_no_active(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    assert coord._get_agent_workspace() == str(tmp_path)
