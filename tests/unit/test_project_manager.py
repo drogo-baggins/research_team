@@ -83,3 +83,18 @@ def test_project_with_milestones_roundtrip(mgr):
     loaded = mgr.load(project.id)
     assert len(loaded.milestones) == 1
     assert loaded.milestones[0].tasks[0].title == "Gather sources"
+
+
+def test_project_dir_structure(mgr, tmp_path):
+    """New layout: projects/{id}/meta.json, checkpoints/, files/"""
+    project = Project(topic="Layout test")
+    mgr.save(project)
+    assert (tmp_path / "projects" / project.id / "meta.json").exists()
+    assert (tmp_path / "projects" / project.id / "checkpoints").is_dir()
+    assert (tmp_path / "projects" / project.id / "files").is_dir()
+
+
+def test_project_files_dir(mgr, tmp_path):
+    project = Project(topic="Files dir test")
+    mgr.save(project)
+    assert mgr.project_files_dir(project.id) == tmp_path / "projects" / project.id / "files"

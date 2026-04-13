@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,10 +13,30 @@ class ProjectManager:
         self._projects_dir = self._workspace / "projects"
         self._projects_dir.mkdir(parents=True, exist_ok=True)
 
-    def _project_path(self, project_id: str) -> Path:
+    def _project_dir(self, project_id: str) -> Path:
+        return self._projects_dir / project_id
+
+    def _meta_path(self, project_id: str) -> Path:
+        return self._project_dir(project_id) / "meta.json"
+
+    def _checkpoints_path(self, project_id: str) -> Path:
+        return self._project_dir(project_id) / "checkpoints"
+
+    def project_files_dir(self, project_id: str) -> Path:
+        return self._project_dir(project_id) / "files"
+
+    def _audit_path(self, project_id: str) -> Path:
+        return self._project_dir(project_id) / "audit.log"
+
+    def _ensure_project_dirs(self, project_id: str) -> None:
+        self._project_dir(project_id).mkdir(parents=True, exist_ok=True)
+        self._checkpoints_path(project_id).mkdir(exist_ok=True)
+        self.project_files_dir(project_id).mkdir(exist_ok=True)
+
+    def _legacy_meta_path(self, project_id: str) -> Path:
         return self._projects_dir / f"{project_id}.json"
 
-    def _checkpoint_dir(self, project_id: str) -> Path:
+    def _legacy_checkpoints_dir(self, project_id: str) -> Path:
         return self._projects_dir / f"{project_id}_checkpoints"
 
     def _assert_within_workspace(self, path: Path) -> None:
@@ -29,48 +48,67 @@ class ProjectManager:
     def save(self, project: Project) -> None:
         if project.status == ProjectStatus.ARCHIVED:
             raise PermissionError(f"Project '{project.id}' is archived and cannot be modified")
-        path = self._project_path(project.id)
+        self._ensure_project_dirs(project.id)
+        path = self._meta_path(project.id)
         self._assert_within_workspace(path)
         project.updated_at = datetime.now(timezone.utc)
         path.write_text(project.model_dump_json(indent=2), encoding="utf-8")
 
     def load(self, project_id: str) -> Project:
-        path = self._project_path(project_id)
-        self._assert_within_workspace(path)
-        if not path.exists():
+        new_path = self._meta_path(project_id)
+        legacy_path = self._legacy_meta_path(project_id)
+        if new_path.exists():
+            path = new_path
+        elif legacy_path.exists():
+            path = legacy_path
+        else:
             raise FileNotFoundError(f"Project '{project_id}' not found")
+        self._assert_within_workspace(path)
         return Project.model_validate_json(path.read_text(encoding="utf-8"))
 
     def list_projects(self) -> list[Project]:
-        return [
-            Project.model_validate_json(p.read_text(encoding="utf-8"))
-            for p in sorted(self._projects_dir.glob("*.json"))
-        ]
+        results = []
+        seen_ids: set[str] = set()
+        for meta in sorted(self._projects_dir.glob("*/meta.json")):
+            project = Project.model_validate_json(meta.read_text(encoding="utf-8"))
+            seen_ids.add(project.id)
+            results.append(project)
+        for legacy in sorted(self._projects_dir.glob("*.json")):
+            project = Project.model_validate_json(legacy.read_text(encoding="utf-8"))
+            if project.id not in seen_ids:
+                results.append(project)
+        return results
 
     def archive(self, project_id: str) -> None:
         project = self.load(project_id)
+        if project.status == ProjectStatus.ARCHIVED:
+            return
         project.status = ProjectStatus.ARCHIVED
         project.updated_at = datetime.now(timezone.utc)
-        path = self._project_path(project_id)
-        path.write_text(project.model_dump_json(indent=2), encoding="utf-8")
+        self._ensure_project_dirs(project_id)
+        self._meta_path(project_id).write_text(project.model_dump_json(indent=2), encoding="utf-8")
 
     def create_checkpoint(self, project_id: str, label: str) -> str:
-        source = self._project_path(project_id)
+        source = self._meta_path(project_id)
+        if not source.exists():
+            source = self._legacy_meta_path(project_id)
         self._assert_within_workspace(source)
         if not source.exists():
             raise FileNotFoundError(f"Project '{project_id}' not found")
-        checkpoint_dir = self._checkpoint_dir(project_id)
-        self._assert_within_workspace(checkpoint_dir)
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        cp_dir = self._checkpoints_path(project_id)
+        self._assert_within_workspace(cp_dir)
+        cp_dir.mkdir(parents=True, exist_ok=True)
         safe_label = label.replace("/", "_").replace("\\", "_")
-        dest = checkpoint_dir / f"{safe_label}.json"
+        dest = cp_dir / f"{safe_label}.json"
         shutil.copy2(source, dest)
         return str(dest)
 
     def restore_checkpoint(self, project_id: str, label: str) -> Project:
-        checkpoint_dir = self._checkpoint_dir(project_id)
+        cp_dir = self._checkpoints_path(project_id)
+        if not cp_dir.exists():
+            cp_dir = self._legacy_checkpoints_dir(project_id)
         safe_label = label.replace("/", "_").replace("\\", "_")
-        checkpoint = checkpoint_dir / f"{safe_label}.json"
+        checkpoint = cp_dir / f"{safe_label}.json"
         self._assert_within_workspace(checkpoint)
         if not checkpoint.exists():
             raise FileNotFoundError(f"Checkpoint '{label}' not found for project '{project_id}'")
@@ -78,6 +116,6 @@ class ProjectManager:
         if project.status == ProjectStatus.ARCHIVED:
             project.status = ProjectStatus.ACTIVE
         project.updated_at = datetime.now(timezone.utc)
-        dest = self._project_path(project_id)
-        dest.write_text(project.model_dump_json(indent=2), encoding="utf-8")
+        self._ensure_project_dirs(project_id)
+        self._meta_path(project_id).write_text(project.model_dump_json(indent=2), encoding="utf-8")
         return project
