@@ -13,7 +13,6 @@ class ControlUI:
         self._context: BrowserContext | None = None
         self._page: Page | None = None
         self._chat_queue: asyncio.Queue[str] = asyncio.Queue()
-        self._captcha_event: asyncio.Event = asyncio.Event()
         self._approval_event: asyncio.Event = asyncio.Event()
         self._approval_result: bool = False
 
@@ -30,8 +29,6 @@ class ControlUI:
         match payload.get("type"):
             case "chat":
                 await self._chat_queue.put(payload.get("message", ""))
-            case "captcha_done":
-                self._captcha_event.set()
             case "approval_done":
                 self._approval_result = payload.get("approved", False)
                 self._approval_event.set()
@@ -59,12 +56,6 @@ class ControlUI:
 
     async def wait_for_user_message(self) -> str:
         return await self._chat_queue.get()
-
-    async def request_captcha(self) -> None:
-        self._captcha_event.clear()
-        if self._is_alive():
-            await self._page.evaluate("setCaptchaVisible(true)")
-        await self._captcha_event.wait()
 
     async def request_content_approval(self, url: str, title: str) -> bool:
         self._approval_event.clear()

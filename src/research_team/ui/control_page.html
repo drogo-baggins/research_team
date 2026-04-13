@@ -88,29 +88,6 @@
     .log-item .error { color: #f87171; }
     .log-item .warn { color: #fb923c; }
 
-    .error-banner {
-      margin: 8px; padding: 10px 14px;
-      background: #450a0a; border: 1px solid #f87171; border-radius: 8px;
-      font-size: 12px; color: #fca5a5; font-family: monospace;
-      white-space: pre-wrap; word-break: break-word; display: none;
-    }
-    .error-banner.visible { display: block; }
-
-    .captcha-banner {
-      display: none;
-      margin: 10px; padding: 12px 14px;
-      background: #7c2d12; border-radius: 10px;
-      border: 1px solid #f97316;
-    }
-    .captcha-banner.visible { display: block; }
-    .captcha-banner p { font-size: 13px; line-height: 1.6; margin-bottom: 10px; }
-    .captcha-banner button {
-      width: 100%; padding: 10px; background: #4ade80; color: #000;
-      border: none; border-radius: 8px; font-size: 14px;
-      font-weight: bold; cursor: pointer;
-    }
-    .captcha-banner button:hover { background: #22c55e; }
-
     .approval-banner {
       display: none;
       margin: 10px; padding: 12px 14px;
@@ -165,12 +142,6 @@
         <h3>📋 進捗ログ</h3>
         <div class="progress-log" id="progressLog"></div>
 
-        <div class="captcha-banner" id="captchaBanner">
-          <p>⚠️ <strong>操作が必要です</strong><br>
-            ブラウザBで操作を完了してから<br>下のボタンを押してください。</p>
-          <button onclick="signalCaptchaDone()">✅ 操作完了・継続する</button>
-        </div>
-
         <div class="approval-banner" id="approvalBanner">
           <div class="approval-url" id="approvalUrl"></div>
           <div class="approval-title" id="approvalTitle"></div>
@@ -223,10 +194,6 @@
       box.scrollTop = box.scrollHeight;
     }
 
-    function setCaptchaVisible(visible) {
-      document.getElementById('captchaBanner').classList.toggle('visible', visible);
-    }
-
     function setApprovalVisible(visible, url, title) {
       const banner = document.getElementById('approvalBanner');
       if (visible) {
@@ -248,11 +215,6 @@
       appendMessage('You', msg, true);
       window.__rt_signal({ type: 'chat', message: msg });
       input.value = '';
-    }
-
-    function signalCaptchaDone() {
-      setCaptchaVisible(false);
-      window.__rt_signal({ type: 'captcha_done' });
     }
 
     function handleKey(e) {

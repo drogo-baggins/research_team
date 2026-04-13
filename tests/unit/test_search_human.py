@@ -1,11 +1,10 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from research_team.search.base import SearchEngine, SearchResult
 from research_team.search.human import HumanSearchEngine
 
 
 def test_search_result_model():
-    """SearchResultが正しいフィールドを持つ"""
     result = SearchResult(
         url="https://example.com",
         title="Example",
@@ -18,14 +17,12 @@ def test_search_result_model():
 
 @pytest.mark.asyncio
 async def test_human_search_engine_is_search_engine():
-    """HumanSearchEngineがSearchEngineの実装である"""
     engine = HumanSearchEngine()
     assert isinstance(engine, SearchEngine)
 
 
 @pytest.mark.asyncio
 async def test_human_search_returns_results():
-    """HumanSearchEngineがSearchResultのリストを返す"""
     mock_page = AsyncMock()
     mock_page.title = AsyncMock(return_value="Test Page")
     mock_page.query_selector_all = AsyncMock(return_value=[])
@@ -43,7 +40,6 @@ async def test_human_search_returns_results():
 
 @pytest.mark.asyncio
 async def test_approval_skips_rejected_pages():
-    """ユーザーが却下したページは結果に含まれない"""
     mock_ui = AsyncMock()
     mock_ui.request_content_approval = AsyncMock(return_value=False)
 
@@ -53,20 +49,18 @@ async def test_approval_skips_rejected_pages():
     mock_page = AsyncMock()
     mock_page.title = AsyncMock(return_value="Some Title")
     mock_page.url = "https://example.com/page1"
+    mock_page.query_selector_all = AsyncMock(return_value=[mock_link])
 
     engine = HumanSearchEngine(control_ui=mock_ui)
     with patch.object(engine, "_navigate_and_wait", side_effect=[mock_page, mock_page]):
         with patch.object(engine, "_extract_content", return_value="content"):
-            with patch.object(engine, "_handle_captcha_if_needed", new=AsyncMock()):
-                mock_page.query_selector_all = AsyncMock(return_value=[mock_link])
-                results = await engine.search("test", max_results=1)
+            results = await engine.search("test", max_results=1)
 
     assert results == []
 
 
 @pytest.mark.asyncio
 async def test_approval_includes_approved_pages():
-    """ユーザーが承認したページは結果に含まれる"""
     mock_ui = AsyncMock()
     mock_ui.request_content_approval = AsyncMock(return_value=True)
 
@@ -85,8 +79,7 @@ async def test_approval_includes_approved_pages():
     engine = HumanSearchEngine(control_ui=mock_ui)
     with patch.object(engine, "_navigate_and_wait", side_effect=[mock_search_page, mock_result_page]):
         with patch.object(engine, "_extract_content", return_value="rich content here"):
-            with patch.object(engine, "_handle_captcha_if_needed", new=AsyncMock()):
-                results = await engine.search("test", max_results=1)
+            results = await engine.search("test", max_results=1)
 
     assert len(results) == 1
     assert results[0].url == "https://example.com/page1"
@@ -94,7 +87,6 @@ async def test_approval_includes_approved_pages():
 
 @pytest.mark.asyncio
 async def test_fetch_calls_approval():
-    """fetch()でも承認ゲートが呼ばれる"""
     mock_ui = AsyncMock()
     mock_ui.request_content_approval = AsyncMock(return_value=True)
 
@@ -105,8 +97,7 @@ async def test_fetch_calls_approval():
     engine = HumanSearchEngine(control_ui=mock_ui)
     with patch.object(engine, "_navigate_and_wait", return_value=mock_page):
         with patch.object(engine, "_extract_content", return_value="article body"):
-            with patch.object(engine, "_handle_captcha_if_needed", new=AsyncMock()):
-                result = await engine.fetch("https://example.com/article")
+            result = await engine.fetch("https://example.com/article")
 
     mock_ui.request_content_approval.assert_called_once()
     assert result.url == "https://example.com/article"
@@ -114,7 +105,6 @@ async def test_fetch_calls_approval():
 
 @pytest.mark.asyncio
 async def test_no_approval_needed_without_ui():
-    """control_ui=None の場合は承認なしで自動取り込み"""
     mock_page = AsyncMock()
     mock_page.url = "https://example.com/article"
     mock_page.title = AsyncMock(return_value="Article")
@@ -122,8 +112,6 @@ async def test_no_approval_needed_without_ui():
     engine = HumanSearchEngine(control_ui=None)
     with patch.object(engine, "_navigate_and_wait", return_value=mock_page):
         with patch.object(engine, "_extract_content", return_value="body"):
-            with patch.object(engine, "_handle_captcha_if_needed", new=AsyncMock()):
-                result = await engine.fetch("https://example.com/article")
+            result = await engine.fetch("https://example.com/article")
 
     assert result.content == "body"
-

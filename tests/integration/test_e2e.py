@@ -51,6 +51,7 @@ async def test_research_coordinator_quick(tmp_path):
     assert len(content) > 50, f"Output too short: {len(content)} chars"
 
 
+@pytest.mark.interactive
 @pytest.mark.asyncio
 async def test_ui_integration(tmp_path):
     from playwright.async_api import async_playwright
@@ -61,7 +62,7 @@ async def test_ui_integration(tmp_path):
     workspace.mkdir()
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await pw.chromium.launch(headless=False)
         ui = ControlUI(browser)
         await ui.start()
 
