@@ -1,10 +1,13 @@
 import os
 from research_team.search.base import SearchEngine
 
+_DEFAULT_SEARCH_URL = "https://www.google.com/search?q="
+
 
 def _get_human_engine(control_ui=None) -> SearchEngine:
     from research_team.search.human import HumanSearchEngine
-    return HumanSearchEngine(control_ui=control_ui)
+    url = os.environ.get("SEARCH_ENGINE_URL", _DEFAULT_SEARCH_URL)
+    return HumanSearchEngine(search_engine_url=url, control_ui=control_ui)
 
 
 def _get_tavily_engine(control_ui=None) -> SearchEngine:
