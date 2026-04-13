@@ -53,10 +53,12 @@ async def test_research_coordinator_quick(tmp_path):
 
 @pytest.mark.interactive
 @pytest.mark.asyncio
-async def test_ui_integration(tmp_path):
+async def test_ui_integration(tmp_path, dummy_search_server, monkeypatch):
     from playwright.async_api import async_playwright
     from research_team.ui.control_ui import ControlUI
     from research_team.orchestrator.coordinator import ResearchCoordinator
+
+    monkeypatch.setenv("SEARCH_ENGINE_URL", dummy_search_server)
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -72,7 +74,6 @@ async def test_ui_integration(tmp_path):
 
         _orig_append_agent = ui.append_agent_message
         _orig_append_log = ui.append_log
-        _orig_request_approval = ui.request_content_approval
 
         async def _spy_agent(sender, text):
             messages_appended.append((sender, text))
@@ -82,13 +83,13 @@ async def test_ui_integration(tmp_path):
             logs_appended.append((status, text))
             await _orig_append_log(status, text)
 
-        async def _spy_approval(url, title):
+        async def _auto_approve(url, title):
             approval_calls.append((url, title))
-            return await _orig_request_approval(url, title)
+            return True
 
         ui.append_agent_message = _spy_agent
         ui.append_log = _spy_log
-        ui.request_content_approval = _spy_approval
+        ui.request_content_approval = _auto_approve
 
         coordinator = ResearchCoordinator(workspace_dir=str(workspace), ui=ui)
 
