@@ -122,3 +122,19 @@ def test_restore_checkpoint_legacy_fallback(tmp_path):
     # restore_checkpoint must find v1 in legacy dir even though new checkpoints/ exists
     restored = mgr.restore_checkpoint(project.id, "v1")
     assert restored.topic == "Legacy checkpoint test"
+
+
+def test_init_creates_project_with_dirs(mgr, tmp_path):
+    project = mgr.init("New research topic")
+    assert project.id is not None
+    assert project.status == ProjectStatus.ACTIVE
+    assert (tmp_path / "projects" / project.id / "meta.json").exists()
+    assert (tmp_path / "projects" / project.id / "files").is_dir()
+    loaded = mgr.load(project.id)
+    assert loaded.topic == "New research topic"
+
+
+def test_init_project_not_in_active_yet(mgr):
+    """init() creates project but does NOT auto-activate it"""
+    project = mgr.init("Test")
+    assert mgr.get_active_id() != project.id

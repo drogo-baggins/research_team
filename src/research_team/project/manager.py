@@ -88,6 +88,11 @@ class ProjectManager:
         self._ensure_project_dirs(project_id)
         self._meta_path(project_id).write_text(project.model_dump_json(indent=2), encoding="utf-8")
 
+    def init(self, topic: str) -> Project:
+        project = Project(topic=topic)
+        self.save(project)
+        return project
+
     def create_checkpoint(self, project_id: str, label: str) -> str:
         source = self._meta_path(project_id)
         if not source.exists():
