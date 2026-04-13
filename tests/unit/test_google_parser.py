@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from research_team.search.google_parser import GoogleSearchParser
 
 

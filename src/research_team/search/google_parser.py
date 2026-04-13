@@ -1,3 +1,10 @@
+"""Google 検索結果ページのパーサー。
+
+このモジュールは Google 固有の DOM 構造に関する知識を閉じ込める。
+将来、Bing や DuckDuckGo などの検索エンジンに対応する場合は
+別の parser クラスを追加する設計とする（このファイルには手を加えない）。
+"""
+
 import logging
 import re
 from urllib.parse import unquote, urlparse
@@ -8,6 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleSearchParser:
+    """Google 検索結果 HTML から SearchResult のリストを生成する。
+
+    Google の DOM 構造は頻繁に変わる。/url?q= リダイレクトパターンを使って
+    個別 URL を抽出するヒューリスティックアプローチを採用する。
+    パースに失敗した場合は空リストを返す（呼び出し元でフォールバックを実装すること）。
+    """
+
     _REDIRECT_PATTERN = re.compile(r"/url\?q=([^&]+)")
     _EXCLUDED_DOMAINS = {
         "google.com", "google.co.jp", "google.co.uk",
@@ -30,6 +44,8 @@ class GoogleSearchParser:
             if not url:
                 continue
 
+            # タイトルは通常 URL より前（リンクテキスト）、スニペットは後に続く
+            # Google の DOM 構造に合わせ、前 200 chars・後 500 chars を走査する
             start = max(0, match.start() - 200)
             end = min(len(html), match.end() + 500)
             context = html[start:end]
@@ -61,7 +77,7 @@ class GoogleSearchParser:
             return ""
         try:
             parsed = urlparse(url)
-            domain = parsed.netloc.lower().lstrip("www.")
+            domain = parsed.netloc.lower().removeprefix("www.")
             if any(domain == ex or domain.endswith("." + ex) for ex in self._EXCLUDED_DOMAINS):
                 return ""
         except Exception:
