@@ -1,7 +1,8 @@
 import asyncio
-import threading
-import pytest
+import sys
 from aiohttp import web
+
+DEFAULT_PORT = 8765
 
 
 def _build_app() -> web.Application:
@@ -35,36 +36,17 @@ def _build_app() -> web.Application:
     return app
 
 
-@pytest.fixture(scope="session")
-def dummy_search_server():
-    loop = asyncio.new_event_loop()
-    runner_holder: list[web.AppRunner] = []
-    port_holder: list[int] = []
-    stop_event = asyncio.Event()
-    ready = threading.Event()
+async def _run(port: int) -> None:
+    app = _build_app()
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", port)
+    await site.start()
+    actual_port = site._server.sockets[0].getsockname()[1]
+    print(f"http://127.0.0.1:{actual_port}/search?q=", flush=True)
+    await asyncio.Event().wait()
 
-    def run() -> None:
-        async def _start() -> None:
-            app = _build_app()
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, "127.0.0.1", 0)
-            await site.start()
-            port = site._server.sockets[0].getsockname()[1]
-            runner_holder.append(runner)
-            port_holder.append(port)
-            ready.set()
-            await stop_event.wait()
-            await runner.cleanup()
 
-        loop.run_until_complete(_start())
-
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    ready.wait(timeout=10)
-
-    port = port_holder[0]
-    yield f"http://127.0.0.1:{port}/search?q="
-
-    loop.call_soon_threadsafe(stop_event.set)
-    t.join(timeout=5)
+if __name__ == "__main__":
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
+    asyncio.run(_run(port))
