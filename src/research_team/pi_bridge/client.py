@@ -95,12 +95,7 @@ class PiAgentClient:
             return
 
         while True:
-            try:
-                line = await asyncio.wait_for(
-                    self._process.stdout.readline(), timeout=300.0
-                )
-            except asyncio.TimeoutError:
-                break
+            line = await self._process.stdout.readline()
 
             if not line:
                 break
