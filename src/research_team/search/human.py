@@ -61,13 +61,13 @@ class HumanSearchEngine(SearchEngine):
     async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         async with self._lock:
             search_url = f"{self._search_engine_url}{query.replace(' ', '+')}"
-            logger.warning("HumanSearchEngine.search: navigating to %s", search_url)
+            logger.debug("HumanSearchEngine.search: navigating to %s", search_url)
             try:
                 page = await self._navigate(search_url)
             except PlaywrightError as e:
                 logger.warning("HumanSearchEngine.search: navigation failed (browser closed?): %s", e)
                 return []
-            logger.warning("HumanSearchEngine.search: page opened, url=%s, control_ui=%s", page.url, self._control_ui)
+            logger.debug("HumanSearchEngine.search: page opened, url=%s, control_ui=%s", page.url, self._control_ui)
             try:
                 content = await self._wait_and_extract(page)
             except PermissionError:

@@ -73,7 +73,7 @@ async def test_fetch_calls_approval():
 
 
 @pytest.mark.asyncio
-async def test_fetch_raises_on_rejection():
+async def test_fetch_returns_empty_content_when_user_rejects():
     mock_ui = AsyncMock()
     mock_ui.wait_for_capture = AsyncMock(return_value=False)
 
@@ -112,7 +112,6 @@ class TestHumanSearchEngineSearchParsed:
         )
 
         engine = HumanSearchEngine()
-        engine._control_ui = None
 
         mock_page = AsyncMock()
         mock_page.url = "https://www.google.com/search?q=test"
@@ -133,7 +132,6 @@ class TestHumanSearchEngineSearchParsed:
         mock_html = "検索結果が見つかりませんでした"
 
         engine = HumanSearchEngine()
-        engine._control_ui = None
 
         mock_page = AsyncMock()
         mock_page.url = "https://www.google.com/search?q=test"
