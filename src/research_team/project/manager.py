@@ -48,9 +48,9 @@ class ProjectManager:
     def save(self, project: Project) -> None:
         if project.status == ProjectStatus.ARCHIVED:
             raise PermissionError(f"Project '{project.id}' is archived and cannot be modified")
-        self._ensure_project_dirs(project.id)
         path = self._meta_path(project.id)
         self._assert_within_workspace(path)
+        self._ensure_project_dirs(project.id)
         project.updated_at = datetime.now(timezone.utc)
         path.write_text(project.model_dump_json(indent=2), encoding="utf-8")
 
@@ -104,11 +104,14 @@ class ProjectManager:
         return str(dest)
 
     def restore_checkpoint(self, project_id: str, label: str) -> Project:
-        cp_dir = self._checkpoints_path(project_id)
-        if not cp_dir.exists():
-            cp_dir = self._legacy_checkpoints_dir(project_id)
         safe_label = label.replace("/", "_").replace("\\", "_")
+        cp_dir = self._checkpoints_path(project_id)
         checkpoint = cp_dir / f"{safe_label}.json"
+        if not checkpoint.exists():
+            legacy_cp_dir = self._legacy_checkpoints_dir(project_id)
+            legacy_checkpoint = legacy_cp_dir / f"{safe_label}.json"
+            if legacy_checkpoint.exists():
+                checkpoint = legacy_checkpoint
         self._assert_within_workspace(checkpoint)
         if not checkpoint.exists():
             raise FileNotFoundError(f"Checkpoint '{label}' not found for project '{project_id}'")

@@ -98,3 +98,27 @@ def test_project_files_dir(mgr, tmp_path):
     project = Project(topic="Files dir test")
     mgr.save(project)
     assert mgr.project_files_dir(project.id) == tmp_path / "projects" / project.id / "files"
+
+
+def test_archive_idempotent(mgr):
+    project = Project(topic="Idempotent archive")
+    mgr.save(project)
+    mgr.archive(project.id)
+    mgr.archive(project.id)  # must not raise
+    loaded = mgr.load(project.id)
+    assert loaded.status == ProjectStatus.ARCHIVED
+
+
+def test_restore_checkpoint_legacy_fallback(tmp_path):
+    """Legacy checkpoint in old dir is found even after new checkpoints/ dir exists."""
+    mgr = ProjectManager(workspace_dir=tmp_path)
+    project = Project(topic="Legacy checkpoint test")
+    # Simulate legacy layout: write checkpoint in old flat location
+    legacy_cp_dir = tmp_path / "projects" / f"{project.id}_checkpoints"
+    legacy_cp_dir.mkdir(parents=True)
+    (legacy_cp_dir / "v1.json").write_text(project.model_dump_json(), encoding="utf-8")
+    # Now save the project in the NEW layout (creates new checkpoints/ dir)
+    mgr.save(project)
+    # restore_checkpoint must find v1 in legacy dir even though new checkpoints/ exists
+    restored = mgr.restore_checkpoint(project.id, "v1")
+    assert restored.topic == "Legacy checkpoint test"
