@@ -232,6 +232,47 @@ async def test_run_returns_research_result(tmp_path):
     assert result.iterations >= 1
 
 
+@pytest.mark.asyncio
+async def test_wbs_is_displayed_via_ui(tmp_path):
+    """PM の WBS 出力がチャットUIに表示されることを検証"""
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+
+    notify_calls: list[tuple[str, str]] = []
+
+    async def fake_notify(agent: str, message: str) -> None:
+        notify_calls.append((agent, message))
+
+    coord._notify = fake_notify
+    coord._log = AsyncMock()
+
+    async def fake_pm_run(message, workspace_dir=None, search_port=0):
+        yield make_text_event("# WBS\n\n## マイルストン1: 情報収集\n- タスク1.1: web_search\n")
+        yield make_end_event()
+
+    coord._pm_agent.run = fake_pm_run
+
+    async def fake_team_run(message, workspace_dir=None, search_port=0):
+        yield make_text_event('[{"name": "調査員", "expertise": "テスト"}]')
+        yield make_end_event()
+
+    coord._team_builder.run = fake_team_run
+
+    from research_team.agents.dynamic.factory import DynamicSpecialistAgent
+
+    async def fake_specialist_run(self, message, workspace_dir=None, search_port=0):
+        yield make_text_event("専門家調査結果 " * 100)
+        yield make_end_event()
+
+    with patch.object(coord, "_start_search_server", new=AsyncMock()), \
+         patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
+        await coord.run(ResearchRequest(topic="テストテーマ"))
+
+    pm_msgs = [msg for agent, msg in notify_calls if agent == "PM"]
+    assert len(pm_msgs) >= 1
+    assert "WBS" in pm_msgs[0] or "マイルストン" in pm_msgs[0]
+
+
 def test_coordinator_passes_workspace_to_project_manager(tmp_path):
     """Bug fix: ProjectManager must use same workspace_dir as coordinator"""
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
