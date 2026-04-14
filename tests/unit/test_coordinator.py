@@ -6,6 +6,7 @@ from research_team.orchestrator.coordinator import (
     ResearchResult,
     _extract_text,
     _build_research_task,
+    _is_negative,
 )
 from research_team.orchestrator.quality_loop import QualityFeedback
 from research_team.pi_bridge.types import AgentEvent
@@ -335,3 +336,66 @@ async def test_checkpoint_created_after_specialist_pass(tmp_path):
     csm_msgs = [msg for agent, msg in notify_calls if agent == "CSM"]
     assert any("中間" in msg or "チェックポイント" in msg or "draft" in msg.lower() for msg in csm_msgs), \
         f"中間成果物通知がない。notify_calls={notify_calls}"
+
+
+def test_is_negative_recognizes_no():
+    assert _is_negative("いいえ") is True
+    assert _is_negative("no") is True
+    assert _is_negative("終了") is True
+    assert _is_negative("終わり") is True
+    assert _is_negative("完了") is True
+
+
+def test_is_negative_does_not_match_affirmative():
+    assert _is_negative("はい") is False
+    assert _is_negative("yes") is False
+    assert _is_negative("追加調査してほしい") is False
+
+
+@pytest.mark.asyncio
+async def test_run_interactive_additional_request_loop(tmp_path):
+    """調査完了後に追加リクエストを受け付けるループが動作することを検証"""
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+
+    messages_sent: list[tuple[str, str]] = []
+
+    async def fake_notify(agent: str, message: str) -> None:
+        messages_sent.append((agent, message))
+
+    coord._notify = fake_notify
+    coord._log = AsyncMock()
+
+    user_inputs = [
+        "テストテーマA",
+        "はい",
+        "別のテーマ追加",
+        "はい",
+        "いいえ",
+    ]
+    input_iter = iter(user_inputs)
+
+    async def fake_wait() -> str:
+        return next(input_iter)
+
+    mock_ui = MagicMock()
+    mock_ui.append_agent_message = AsyncMock()
+    mock_ui.wait_for_user_message = fake_wait
+    coord._ui = mock_ui
+
+    run_calls: list[ResearchRequest] = []
+
+    async def fake_run(request: ResearchRequest) -> ResearchResult:
+        run_calls.append(request)
+        return ResearchResult(
+            content="調査結果",
+            output_path=str(tmp_path / "report.md"),
+            quality_score=1.0,
+            iterations=1,
+        )
+
+    coord.run = fake_run
+
+    await coord.run_interactive(depth="standard")
+
+    assert len(run_calls) == 2, f"run() が{len(run_calls)}回呼ばれた（期待: 2回）"
+    assert run_calls[0].topic == "テストテーマA"

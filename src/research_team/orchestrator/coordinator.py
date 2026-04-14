@@ -64,6 +64,16 @@ def _is_affirmative(text: str) -> bool:
     return False
 
 
+def _is_negative(text: str) -> bool:
+    normalized = text.strip().lower()
+    negatives = {"いいえ", "no", "n", "終了", "終わり", "完了", "やめる", "stop", "quit", "exit"}
+    if normalized in negatives:
+        return True
+    if normalized.startswith(("いいえ", "no ", "終了", "終わり")):
+        return True
+    return False
+
+
 def _build_research_task(
     topic: str,
     feedback: QualityFeedback | None,
@@ -345,6 +355,7 @@ class ResearchCoordinator:
     ) -> None:
         if self._ui:
             depth_label = {"quick": "簡易", "standard": "標準", "deep": "詳細"}.get(depth, depth)
+            # 初回テーマ入力ループ
             while True:
                 await self._ui.append_agent_message(
                     "CSM",
@@ -367,17 +378,46 @@ class ResearchCoordinator:
         else:
             topic = input("テーマを入力してください: ")
 
-        request = ResearchRequest(topic=topic, depth=depth, output_format=output_format)
-        try:
-            result = await self.run(request)
-            if self._ui:
-                await self._log("done", f"完了: {result.output_path}")
-        except Exception as exc:
-            err_msg = f"エラーが発生しました: {exc}"
-            tb = traceback.format_exc()
-            logger.error("run_interactive error:\n%s", tb)
-            await self._notify("System", err_msg)
-            await self._log("running", err_msg)
-            if self._ui:
-                await self._ui.append_log("running", tb)
-            raise
+        # 調査ループ（初回 + 追加リクエスト）
+        while True:
+            request = ResearchRequest(topic=topic, depth=depth, output_format=output_format)
+            try:
+                result = await self.run(request)
+                if self._ui:
+                    await self._log("done", f"完了: {result.output_path}")
+            except Exception as exc:
+                err_msg = f"エラーが発生しました: {exc}"
+                tb = traceback.format_exc()
+                logger.error("run_interactive error:\n%s", tb)
+                await self._notify("System", err_msg)
+                await self._log("running", err_msg)
+                if self._ui:
+                    await self._ui.append_log("running", tb)
+                raise
+
+            # UI がない場合は追加ループなし
+            if not self._ui:
+                break
+
+            # 追加リクエスト確認
+            await self._ui.append_agent_message(
+                "CSM",
+                "調査が完了しました。追加の調査や修正はありますか？（内容を入力するか、「いいえ」で終了）"
+            )
+            additional = await self._ui.wait_for_user_message()
+
+            if _is_negative(additional):
+                await self._ui.append_agent_message("CSM", "ありがとうございました。調査を終了します。")
+                break
+
+            # 追加リクエストを確認
+            await self._ui.append_agent_message(
+                "CSM",
+                f"追加リクエスト「{additional}」を受け付けました。続けますか？（はい／いいえ）"
+            )
+            confirm = await self._ui.wait_for_user_message()
+            if not _is_affirmative(confirm):
+                await self._ui.append_agent_message("CSM", "承知しました。調査を終了します。")
+                break
+
+            topic = additional
