@@ -292,3 +292,46 @@ def test_coordinator_uses_project_files_dir_when_active(tmp_path):
 def test_coordinator_falls_back_to_workspace_root_when_no_active(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
     assert coord._get_agent_workspace() == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_created_after_specialist_pass(tmp_path):
+    """スペシャリストパス完了後にチェックポイントが作成されることを検証"""
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+
+    project = coord._project_manager.init("テストプロジェクト")
+    coord._project_manager.switch(project.id)
+
+    notify_calls: list[tuple[str, str]] = []
+
+    async def fake_notify(agent: str, message: str) -> None:
+        notify_calls.append((agent, message))
+
+    coord._notify = fake_notify
+    coord._log = AsyncMock()
+
+    async def fake_agent_run(message, workspace_dir=None, search_port=0):
+        yield make_text_event("調査結果 " * 100)
+        yield make_end_event()
+
+    coord._pm_agent.run = fake_agent_run
+    coord._team_builder.run = fake_agent_run
+
+    from research_team.agents.dynamic.factory import DynamicSpecialistAgent
+
+    async def fake_specialist_run(self, message, workspace_dir=None, search_port=0):
+        yield make_text_event("専門家調査結果 " * 100)
+        yield make_end_event()
+
+    with patch.object(coord, "_start_search_server", new=AsyncMock()), \
+         patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
+        await coord.run(ResearchRequest(topic="テストテーマ"))
+
+    checkpoints_dir = coord._project_manager._workspace / "projects" / project.id / "checkpoints"
+    checkpoint_files = list(checkpoints_dir.glob("*.json")) if checkpoints_dir.exists() else []
+    assert len(checkpoint_files) >= 1, "チェックポイントが作成されていない"
+
+    csm_msgs = [msg for agent, msg in notify_calls if agent == "CSM"]
+    assert any("中間" in msg or "チェックポイント" in msg or "draft" in msg.lower() for msg in csm_msgs), \
+        f"中間成果物通知がない。notify_calls={notify_calls}"
