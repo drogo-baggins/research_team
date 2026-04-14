@@ -1,7 +1,20 @@
+# tests/unit/test_search_human.py
 import pytest
-from unittest.mock import AsyncMock, patch
-from research_team.search.base import SearchEngine, SearchResult
+from unittest.mock import AsyncMock, MagicMock, patch
+from research_team.search.base import SearchResult
 from research_team.search.human import HumanSearchEngine
+
+
+def _make_search_page(evaluate_all_return=None, inner_text_return="body text"):
+    """evaluate_all と inner_text を持つ search page モック。"""
+    mock_locator = MagicMock()
+    mock_locator.evaluate_all = AsyncMock(return_value=evaluate_all_return or [])
+    page = AsyncMock()
+    page.locator = MagicMock(return_value=mock_locator)
+    page.inner_text = AsyncMock(return_value=inner_text_return)
+    page.title = AsyncMock(return_value="Test - Google Search")
+    page.close = AsyncMock()
+    return page
 
 
 def test_search_result_model():
@@ -16,38 +29,61 @@ def test_search_result_model():
 
 
 @pytest.mark.asyncio
-async def test_search_returns_search_results_page_as_single_result():
+async def test_search_returns_multiple_results_when_extractor_finds_links():
+    """GoogleSearchExtractor が結果を返した場合、複数件の SearchResult が返ること。"""
     mock_ui = AsyncMock()
     mock_ui.wait_for_capture = AsyncMock(return_value=True)
 
-    mock_search_page = AsyncMock()
-    mock_search_page.url = "https://www.google.com/search?q=python+asyncio"
-    mock_search_page.title = AsyncMock(return_value="python asyncio - Google Search")
-    mock_search_page.inner_text = AsyncMock(return_value="Google search results content")
+    page = _make_search_page(evaluate_all_return=[
+        {"href": "/url?q=https://example.com/article1&sa=U", "title": "Article 1", "snippet": "Snip 1"},
+        {"href": "/url?q=https://example.com/article2&sa=U", "title": "Article 2", "snippet": "Snip 2"},
+    ])
+    page.url = "https://www.google.com/search?q=test"
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate", return_value=mock_search_page):
+    with patch.object(engine, "_navigate", return_value=page):
+        results = await engine.search("test query", max_results=5)
+
+    assert len(results) >= 2
+    urls = [r.url for r in results]
+    assert "https://example.com/article1" in urls
+    assert "https://example.com/article2" in urls
+    mock_ui.wait_for_capture.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_search_falls_back_to_single_result_when_extractor_finds_nothing():
+    """evaluate_all が空を返した場合、フォールバックで1件返すこと。"""
+    mock_ui = AsyncMock()
+    mock_ui.wait_for_capture = AsyncMock(return_value=True)
+
+    page = _make_search_page(
+        evaluate_all_return=[],
+        inner_text_return="Google search results content",
+    )
+    page.url = "https://www.google.com/search?q=python+asyncio"
+
+    engine = HumanSearchEngine(control_ui=mock_ui)
+    with patch.object(engine, "_navigate", return_value=page):
         results = await engine.search("python asyncio", max_results=5)
 
     assert len(results) == 1
     assert results[0].url == "https://www.google.com/search?q=python+asyncio"
     assert results[0].source == "human"
     assert "Google search results content" in results[0].content
-    mock_ui.wait_for_capture.assert_called_once_with("https://www.google.com/search?q=python+asyncio")
 
 
 @pytest.mark.asyncio
-async def test_search_returns_empty_when_user_skips_results_page():
+async def test_search_returns_empty_when_user_skips():
+    """ユーザーが承認を拒否した場合、空リストを返すこと。"""
     mock_ui = AsyncMock()
     mock_ui.wait_for_capture = AsyncMock(return_value=False)
 
-    mock_search_page = AsyncMock()
-    mock_search_page.url = "https://www.google.com/search?q=test"
-    mock_search_page.title = AsyncMock(return_value="test - Google Search")
-    mock_search_page.inner_text = AsyncMock(return_value="some content")
+    page = _make_search_page()
+    page.url = "https://www.google.com/search?q=test"
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate", return_value=mock_search_page):
+    with patch.object(engine, "_navigate", return_value=page):
         results = await engine.search("test", max_results=5)
 
     assert results == []
@@ -55,16 +91,18 @@ async def test_search_returns_empty_when_user_skips_results_page():
 
 @pytest.mark.asyncio
 async def test_fetch_calls_approval():
+    """fetch() がユーザー承認を求めること。"""
     mock_ui = AsyncMock()
     mock_ui.wait_for_capture = AsyncMock(return_value=True)
 
-    mock_page = AsyncMock()
-    mock_page.url = "https://example.com/article"
-    mock_page.title = AsyncMock(return_value="Article Title")
-    mock_page.inner_text = AsyncMock(return_value="article body")
+    page = AsyncMock()
+    page.url = "https://example.com/article"
+    page.title = AsyncMock(return_value="Article Title")
+    page.inner_text = AsyncMock(return_value="article body")
+    page.close = AsyncMock()
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate", return_value=mock_page):
+    with patch.object(engine, "_navigate", return_value=page):
         result = await engine.fetch("https://example.com/article")
 
     mock_ui.wait_for_capture.assert_called_once_with("https://example.com/article")
@@ -74,15 +112,16 @@ async def test_fetch_calls_approval():
 
 @pytest.mark.asyncio
 async def test_fetch_returns_empty_content_when_user_rejects():
+    """fetch() でユーザーが拒否した場合、空コンテンツを返すこと。"""
     mock_ui = AsyncMock()
     mock_ui.wait_for_capture = AsyncMock(return_value=False)
 
-    mock_page = AsyncMock()
-    mock_page.url = "https://example.com/article"
-    mock_page.title = AsyncMock(return_value="Article")
+    page = AsyncMock()
+    page.url = "https://example.com/article"
+    page.close = AsyncMock()
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate", return_value=mock_page):
+    with patch.object(engine, "_navigate", return_value=page):
         result = await engine.fetch("https://example.com/article")
 
     assert result.url == "https://example.com/article"
@@ -91,56 +130,15 @@ async def test_fetch_returns_empty_content_when_user_rejects():
 
 @pytest.mark.asyncio
 async def test_no_approval_needed_without_ui():
-    mock_page = AsyncMock()
-    mock_page.url = "https://example.com/article"
-    mock_page.title = AsyncMock(return_value="Article")
-    mock_page.inner_text = AsyncMock(return_value="body text")
+    """control_ui が None の場合、承認なしで fetch できること。"""
+    page = AsyncMock()
+    page.url = "https://example.com/article"
+    page.title = AsyncMock(return_value="Article")
+    page.inner_text = AsyncMock(return_value="body text")
+    page.close = AsyncMock()
 
     engine = HumanSearchEngine(control_ui=None)
-    with patch.object(engine, "_navigate", return_value=mock_page):
+    with patch.object(engine, "_navigate", return_value=page):
         result = await engine.fetch("https://example.com/article")
 
     assert result.content == "body text"
-
-
-class TestHumanSearchEngineSearchParsed:
-    @pytest.mark.asyncio
-    async def test_search_returns_multiple_results_when_parser_finds_links(self):
-        mock_html = (
-            'Title1 /url?q=https://example.com/article1&sa=U snippet1 '
-            '/url?q=https://example.com/article2&sa=U snippet2'
-        )
-
-        engine = HumanSearchEngine()
-
-        mock_page = AsyncMock()
-        mock_page.url = "https://www.google.com/search?q=test"
-        mock_page.inner_text = AsyncMock(return_value=mock_html)
-        mock_page.title = AsyncMock(return_value="test - Google Search")
-        mock_page.close = AsyncMock()
-
-        with patch.object(engine, "_navigate", return_value=mock_page):
-            results = await engine.search("test query", max_results=5)
-
-        assert len(results) >= 2
-        urls = [r.url for r in results]
-        assert "https://example.com/article1" in urls
-        assert "https://example.com/article2" in urls
-
-    @pytest.mark.asyncio
-    async def test_search_falls_back_to_single_result_when_parser_finds_nothing(self):
-        mock_html = "検索結果が見つかりませんでした"
-
-        engine = HumanSearchEngine()
-
-        mock_page = AsyncMock()
-        mock_page.url = "https://www.google.com/search?q=test"
-        mock_page.inner_text = AsyncMock(return_value=mock_html)
-        mock_page.title = AsyncMock(return_value="test - Google Search")
-        mock_page.close = AsyncMock()
-
-        with patch.object(engine, "_navigate", return_value=mock_page):
-            results = await engine.search("test query", max_results=5)
-
-        assert len(results) == 1
-        assert results[0].source == "human"

@@ -2,13 +2,13 @@ import asyncio
 import logging
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext, Error as PlaywrightError
 from research_team.search.base import SearchEngine, SearchResult
-from research_team.search.google_parser import GoogleSearchParser
+from research_team.search.google_extractor import GoogleSearchExtractor
 
 logger = logging.getLogger(__name__)
 
 
 class HumanSearchEngine(SearchEngine):
-    _parser = GoogleSearchParser()
+    _extractor = GoogleSearchExtractor()
 
     def __init__(
         self,
@@ -49,14 +49,14 @@ class HumanSearchEngine(SearchEngine):
             logger.warning("HumanSearchEngine._navigate: failed for %s: %s", url, exc)
             raise
 
-    async def _wait_and_extract(self, page: Page) -> str:
-        if self._control_ui is not None:
-            approved = await self._control_ui.wait_for_capture(page.url)
-            if not approved:
-                raise PermissionError(f"User skipped: {page.url}")
-        text = await page.inner_text("body")
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        return "\n".join(lines[:500])
+    async def _require_approval(self, page: Page) -> bool:
+        if self._control_ui is None:
+            return True
+        try:
+            return await self._control_ui.wait_for_capture(page.url)
+        except Exception as exc:
+            logger.warning("HumanSearchEngine._require_approval: unexpected error: %s", exc)
+            return True
 
     async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         async with self._lock:
@@ -65,25 +65,37 @@ class HumanSearchEngine(SearchEngine):
             try:
                 page = await self._navigate(search_url)
             except PlaywrightError as e:
-                logger.warning("HumanSearchEngine.search: navigation failed (browser closed?): %s", e)
+                logger.warning("HumanSearchEngine.search: navigation failed: %s", e)
                 return []
-            logger.debug("HumanSearchEngine.search: page opened, url=%s, control_ui=%s", page.url, self._control_ui)
-            try:
-                content = await self._wait_and_extract(page)
-            except PermissionError:
+            logger.debug("HumanSearchEngine.search: page opened, url=%s", page.url)
+
+            approved = await self._require_approval(page)
+            if not approved:
                 logger.info("User skipped search results page for query: %s", query)
                 try:
                     await page.close()
                 except Exception:
                     pass
                 return []
-            except PlaywrightError as e:
-                logger.warning("HumanSearchEngine.search: page closed during extraction: %s", e)
+
+            results = await self._extractor.extract(page, max_results=max_results)
+            if results:
                 try:
                     await page.close()
                 except Exception:
                     pass
-                return []
+                return results
+
+            logger.debug(
+                "HumanSearchEngine.search: extractor returned 0 results, falling back to raw page"
+            )
+            try:
+                content = await page.inner_text("body")
+                lines = [line.strip() for line in content.splitlines() if line.strip()]
+                content = "\n".join(lines[:500])
+            except PlaywrightError as e:
+                logger.warning("HumanSearchEngine.search: inner_text failed: %s", e)
+                content = ""
             try:
                 title = await page.title()
             except PlaywrightError:
@@ -92,36 +104,31 @@ class HumanSearchEngine(SearchEngine):
                 await page.close()
             except Exception:
                 pass
-
-        parsed = self._parser.parse(content, max_results=max_results)
-        if parsed:
-            logger.info(
-                "HumanSearchEngine.search: parsed %d results from Google SERP",
-                len(parsed),
-            )
-            return parsed
-
-        logger.warning(
-            "HumanSearchEngine.search: parser returned 0 results, falling back to raw page"
-        )
-        return [SearchResult(url=search_url, title=title, content=content, source="human")]
+            return [SearchResult(url=search_url, title=title, content=content, source="human")]
 
     async def fetch(self, url: str) -> SearchResult:
         async with self._lock:
             try:
                 page = await self._navigate(url)
             except PlaywrightError as e:
-                logger.warning("HumanSearchEngine.fetch: navigation failed (browser closed?): %s", e)
+                logger.warning("HumanSearchEngine.fetch: navigation failed: %s", e)
                 return SearchResult(url=url, title="", content="", source="human")
-            try:
-                content = await self._wait_and_extract(page)
-            except (PermissionError, PlaywrightError) as e:
-                logger.warning("HumanSearchEngine.fetch: page closed during extraction: %s", e)
+
+            approved = await self._require_approval(page)
+            if not approved:
                 try:
                     await page.close()
                 except Exception:
                     pass
                 return SearchResult(url=url, title="", content="", source="human")
+
+            try:
+                content = await page.inner_text("body")
+                lines = [line.strip() for line in content.splitlines() if line.strip()]
+                content = "\n".join(lines[:500])
+            except PlaywrightError as e:
+                logger.warning("HumanSearchEngine.fetch: inner_text failed: %s", e)
+                content = ""
             try:
                 title = await page.title()
             except PlaywrightError:
