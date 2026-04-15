@@ -80,7 +80,12 @@ def test_parse_team_spec_caps_at_3():
 
 def test_evaluate_content_passes_when_long_enough():
     coord = ResearchCoordinator.__new__(ResearchCoordinator)
-    content = "a" * 1000
+    content = (
+        "## 概要\n\nhttps://example.com/source1 参照。\n\n"
+        + "a" * 800
+        + "\n\n## 結論\n\nhttps://example.com/source2 参照。\n\n"
+        + "b" * 200
+    )
     feedback = coord._evaluate_content(content, "standard")
     assert feedback.passed is True
     assert feedback.score == 1.0
@@ -295,6 +300,22 @@ def test_coordinator_falls_back_to_workspace_root_when_no_active(tmp_path):
     assert coord._get_agent_workspace() == str(tmp_path)
 
 
+def test_make_artifact_writer_uses_project_dir_when_active(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    project = coord._project_manager.init("テスト")
+    coord._project_manager.switch(project.id)
+    writer = coord._make_artifact_writer("20260416_120000")
+    expected = coord._project_manager.project_files_dir(project.id) / "artifacts"
+    assert writer._dir == expected
+
+
+def test_make_artifact_writer_uses_session_dir_when_no_project(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    writer = coord._make_artifact_writer("20260416_120000")
+    assert "sessions" in str(writer._dir)
+    assert "20260416_120000" in str(writer._dir)
+
+
 @pytest.mark.asyncio
 async def test_checkpoint_created_after_specialist_pass(tmp_path):
     """スペシャリストパス完了後にチェックポイントが作成されることを検証"""
@@ -338,6 +359,49 @@ async def test_checkpoint_created_after_specialist_pass(tmp_path):
         f"中間成果物通知がない。notify_calls={notify_calls}"
 
 
+@pytest.mark.asyncio
+async def test_specialist_drafts_saved_during_pass(tmp_path):
+    """スペシャリスト完了ごとに中間ファイルが保存され、CSM に通知される"""
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    notify_calls: list[tuple[str, str]] = []
+
+    async def fake_notify(agent: str, message: str) -> None:
+        notify_calls.append((agent, message))
+
+    coord._notify = fake_notify
+    coord._log = AsyncMock()
+
+    async def fake_agent_run(message, workspace_dir=None, search_port=0):
+        yield make_text_event("調査結果 " * 100)
+        yield make_end_event()
+
+    coord._pm_agent.run = fake_agent_run
+    coord._team_builder.run = fake_agent_run
+
+    from research_team.agents.dynamic.factory import DynamicSpecialistAgent
+
+    async def fake_specialist_run(self, message, workspace_dir=None, search_port=0):
+        yield make_text_event("専門家調査結果 " * 100)
+        yield make_end_event()
+
+    with patch.object(coord, "_start_search_server", new=AsyncMock()), \
+         patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
+        await coord.run(ResearchRequest(topic="テストテーマ"), session_id="test_session")
+
+    # ファイルが保存されている
+    artifacts_dir = tmp_path / "sessions" / "test_session" / "artifacts"
+    specialist_files = list(artifacts_dir.glob("specialist_*.md")) if artifacts_dir.exists() else []
+    assert len(specialist_files) >= 1, f"スペシャリスト中間ファイルがない: {list(artifacts_dir.iterdir()) if artifacts_dir.exists() else 'dir missing'}"
+
+    # CSM への通知がある
+    csm_file_notifications = [
+        msg for agent, msg in notify_calls
+        if agent == "CSM" and "📄" in msg and "保存" in msg
+    ]
+    assert len(csm_file_notifications) >= 1, f"ファイル保存通知がない。notify_calls={notify_calls}"
+
+
 def test_is_negative_recognizes_no():
     assert _is_negative("いいえ") is True
     assert _is_negative("no") is True
@@ -368,9 +432,11 @@ async def test_run_interactive_additional_request_loop(tmp_path):
     user_inputs = [
         "テストテーマA",
         "はい",
+        "1",
         "別のテーマ追加",
         "はい",
-        "いいえ",
+        "1",
+        "終了",
     ]
     input_iter = iter(user_inputs)
 
@@ -379,12 +445,13 @@ async def test_run_interactive_additional_request_loop(tmp_path):
 
     mock_ui = MagicMock()
     mock_ui.append_agent_message = AsyncMock()
+    mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
     coord._ui = mock_ui
 
     run_calls: list[ResearchRequest] = []
 
-    async def fake_run(request: ResearchRequest) -> ResearchResult:
+    async def fake_run(request: ResearchRequest, run_id: int = 0, session_id: str = "") -> ResearchResult:
         run_calls.append(request)
         return ResearchResult(
             content="調査結果",
