@@ -67,3 +67,36 @@ async def test_quality_loop_stops_on_pass():
     assert call_count == 2, f"Expected 2 calls, got {call_count}"
     assert result.passed
     assert not result.escalate_to_user
+
+
+@pytest.mark.asyncio
+async def test_quality_loop_passes_previous_content_to_iteration():
+    """on_iteration が previous_content を受け取れる（マージ戦略）。"""
+    received_previous: list[str] = []
+
+    async def fail_once_evaluator(content: str) -> QualityFeedback:
+        passed = "IMPROVED" in content
+        return QualityFeedback(passed=passed, score=0.9 if passed else 0.3, improvements=["add more"])
+
+    async def merge_iteration(iteration: int, feedback: QualityFeedback, previous_content: str) -> str:
+        received_previous.append(previous_content)
+        return previous_content + "\nIMPROVED"
+
+    loop = QualityLoop(max_iterations=3, evaluator=fail_once_evaluator)
+    result = await loop.run(initial_content="INITIAL", on_iteration=merge_iteration)
+
+    assert result.passed
+    assert len(received_previous) == 1
+    assert received_previous[0] == "INITIAL"
+
+
+@pytest.mark.asyncio
+async def test_quality_loop_backward_compat_two_arg_on_iteration():
+    """既存の 2引数 on_iteration も引き続き動く（後方互換）。"""
+
+    async def old_style_iteration(iteration: int, feedback: QualityFeedback) -> str:
+        return "new content"
+
+    loop = QualityLoop(max_iterations=2, evaluator=None)
+    result = await loop.run(initial_content="test", on_iteration=old_style_iteration)
+    assert result.passed

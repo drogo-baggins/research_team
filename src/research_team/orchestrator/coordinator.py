@@ -451,8 +451,12 @@ class ResearchCoordinator:
 
         iterations_done = 0
 
-        async def run_research(iteration: int, feedback: QualityFeedback) -> str:
-            return await self._run_specialist_pass(
+        async def run_research(
+            iteration: int,
+            feedback: QualityFeedback,
+            previous_content: str = "",
+        ) -> str:
+            new_content = await self._run_specialist_pass(
                 factory,
                 topic,
                 feedback,
@@ -460,6 +464,14 @@ class ResearchCoordinator:
                 run_id=run_id,
                 artifact_writer=artifact_writer,
             )
+            if previous_content and new_content:
+                # 前回内容を保持し、新発見を追記（ゼロトラスト蓄積）
+                return (
+                    previous_content
+                    + f"\n\n---\n\n## 追加調査（イテレーション {iteration}）\n\n"
+                    + new_content
+                )
+            return new_content or previous_content
 
         combined_content = await self._run_specialist_pass(
             factory,

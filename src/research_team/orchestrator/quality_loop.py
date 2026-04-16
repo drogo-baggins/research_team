@@ -1,5 +1,6 @@
 import logging
 import os
+import inspect
 from collections.abc import Callable, Awaitable
 from pydantic import BaseModel
 
@@ -28,7 +29,7 @@ class QualityLoop:
     async def run(
         self,
         initial_content: str,
-        on_iteration: Callable[[int, QualityFeedback], Awaitable[str]] | None = None,
+        on_iteration: Callable[..., Awaitable[str]] | None = None,
     ) -> QualityFeedback:
         content = initial_content
         last_result = QualityFeedback(passed=False, score=0.0, improvements=["未評価"])
@@ -58,7 +59,13 @@ class QualityLoop:
 
             if on_iteration:
                 try:
-                    content = await on_iteration(iteration, last_result)
+                    sig = inspect.signature(on_iteration)
+                    if len(sig.parameters) >= 3:
+                        # 新スタイル: (iteration, feedback, previous_content) -> str
+                        content = await on_iteration(iteration, last_result, content)
+                    else:
+                        # 旧スタイル: (iteration, feedback) -> str（後方互換）
+                        content = await on_iteration(iteration, last_result)
                 except Exception as exc:
                     logger.error("QualityLoop: on_iteration failed on iteration %d: %s", iteration, exc)
                     break
