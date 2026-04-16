@@ -255,7 +255,14 @@ class ResearchCoordinator:
             except Exception as exc:
                 logger.warning("set_agent_status failed (agent=%s): %s", agent_name, exc)
 
-    async def _stream_agent_output(self, agent, message: str, agent_name: str) -> str:
+    async def _stream_agent_output(
+        self,
+        agent,
+        message: str,
+        agent_name: str,
+        artifact_writer: "ArtifactWriter | None" = None,
+        run_id: int = 0,
+    ) -> str:
         parts: list[str] = []
         events: list[AgentEvent] = []
         await self._set_agent_status(agent_name, "working")
@@ -291,6 +298,25 @@ class ResearchCoordinator:
                                 await self._log("error", f"{agent_name}: {tool} エラー")
                             else:
                                 await self._log("done", f"{agent_name}: {tool} 完了")
+
+                            # ゼロトラスト蓄積: 生ツール結果を即時保存
+                            if artifact_writer and tool in ("web_search", "web_fetch") and not is_error:
+                                result_data = event.data.get("result") or event.data.get("args", {})
+                                try:
+                                    call_index = sum(
+                                        1 for e in events
+                                        if e.type == "tool_execution_end"
+                                        and e.data.get("toolName") == tool
+                                    )
+                                    artifact_writer.write_raw_tool_result(
+                                        run_id=run_id,
+                                        specialist_name=agent_name,
+                                        tool_name=tool,
+                                        call_index=call_index,
+                                        result_data=result_data,
+                                    )
+                                except Exception as exc:
+                                    logger.warning("write_raw_tool_result failed: %s", exc)
                         case "auto_retry_start":
                             attempt = event.data.get("attempt", "")
                             err = event.data.get("errorMessage", "")
@@ -518,7 +544,13 @@ class ResearchCoordinator:
         sections: list[str] = []
         for i, (name, agent) in enumerate(factory.agents.items()):
             task_message = _build_research_task(topic, feedback, name, reference_content)
-            section = await self._stream_agent_output(agent, task_message, name)
+            section = await self._stream_agent_output(
+                agent,
+                task_message,
+                name,
+                artifact_writer=artifact_writer,
+                run_id=run_id,
+            )
             if section:
                 sections.append(f"## {name}\n\n{section}")
             await self._mark_wbs_done(f"r{run_id}-task-specialist-{i}")

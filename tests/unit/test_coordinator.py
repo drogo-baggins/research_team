@@ -215,6 +215,46 @@ async def test_stream_agent_output_logs_retry_and_extension_error(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_stream_agent_output_saves_raw_on_tool_end(tmp_path):
+    """tool_execution_end イベントで生結果が raw/ に保存される。"""
+    from research_team.output.artifact_writer import ArtifactWriter
+
+    writer = ArtifactWriter(tmp_path / "artifacts")
+
+    async def fake_run(message, workspace_dir=None, search_port=0):
+        yield AgentEvent(type="tool_execution_start", data={"toolName": "web_search", "args": {"query": "テスト"}})
+        yield AgentEvent(type="tool_execution_end", data={
+            "toolName": "web_search",
+            "isError": False,
+            "args": {"query": "テスト"},
+            "result": {"query": "テスト", "results": [{"title": "T", "url": "http://x.com", "content": "c"}]},
+        })
+        yield AgentEvent(type="message_update", data={"assistantMessageEvent": {"type": "text_delta", "delta": "完了"}})
+        yield AgentEvent(type="agent_end", data={})
+
+    class FakeAgent:
+        def run(self, message, workspace_dir=None, search_port=0):
+            return fake_run(message)
+
+    import os
+    os.makedirs(str(tmp_path / "workspace"), exist_ok=True)
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path / "workspace"))
+
+    result = await coord._stream_agent_output(
+        FakeAgent(), "test", "TestAgent",
+        artifact_writer=writer,
+        run_id=1,
+    )
+
+    assert result == "完了"
+    raw_files = list((tmp_path / "artifacts" / "raw").glob("*.md"))
+    assert len(raw_files) == 1
+    content = raw_files[0].read_text(encoding="utf-8")
+    assert "web_search" in content
+    assert "テスト" in content
+
+
+@pytest.mark.asyncio
 async def test_run_returns_research_result(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
 
