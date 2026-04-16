@@ -385,6 +385,24 @@ class ResearchCoordinator:
             return ArtifactWriter(artifacts_dir)
         return ArtifactWriter.for_session(Path(self._workspace_dir), session_id)
 
+    def _build_summary_prompt(self, topic: str, content: str) -> str:
+        max_chars = os.environ.get("RT_MAX_SUMMARY_CHARS")
+        body = content[:int(max_chars)] if max_chars else content
+        return (
+            f"以下は「{topic}」についての専門家調査結果です。\n\n"
+            f"{body}\n\n"
+            f"この調査結果から、意思決定者向けに300字以内の「エグゼクティブサマリー」を書いてください。"
+            f"最重要な発見を3点、箇条書きで含めてください。日本語で記述してください。"
+        )
+
+    def _build_audit_prompt(self, topic: str, content: str) -> str:
+        max_chars = os.environ.get("RT_MAX_AUDIT_CHARS")
+        body = content[:int(max_chars)] if max_chars else content
+        return (
+            f"以下は「{topic}」についてのリサーチレポートです。評価してください。\n\n"
+            f"{body}"
+        )
+
     async def _run_research(
         self,
         topic: str,
@@ -452,12 +470,7 @@ class ResearchCoordinator:
             artifact_writer=artifact_writer,
         )
 
-        summary_prompt = (
-            f"以下は「{topic}」についての専門家調査結果です。\n\n"
-            f"{combined_content[:3000]}\n\n"
-            f"この調査結果から、意思決定者向けに300字以内の「エグゼクティブサマリー」を書いてください。"
-            f"最重要な発見を3点、箇条書きで含めてください。日本語で記述してください。"
-        )
+        summary_prompt = self._build_summary_prompt(topic, combined_content)
         exec_summary = await self._stream_agent_output(self._csm, summary_prompt, "CSM")
         if exec_summary:
             combined_content = (
@@ -604,10 +617,7 @@ class ResearchCoordinator:
         return QualityFeedback(passed=True, score=1.0)
 
     async def _run_audit(self, content: str, topic: str) -> dict:
-        audit_prompt = (
-            f"以下は「{topic}」についてのリサーチレポートです。評価してください。\n\n"
-            f"{content[:4000]}"
-        )
+        audit_prompt = self._build_audit_prompt(topic, content)
         await self._set_agent_status("Auditor", "reviewing")
         raw = await self._stream_agent_output(self._auditor, audit_prompt, "Auditor")
         await self._set_agent_status("Auditor", "done")

@@ -456,6 +456,28 @@ def test_is_negative_does_not_match_affirmative():
     assert _is_negative("追加調査してほしい") is False
 
 
+def test_summary_prompt_uses_full_content_when_no_env(monkeypatch, tmp_path):
+    """RT_MAX_SUMMARY_CHARS 未設定なら combined_content 全文が summary_prompt に含まれる。"""
+    monkeypatch.delenv("RT_MAX_SUMMARY_CHARS", raising=False)
+    from research_team.orchestrator.coordinator import ResearchCoordinator
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    long_content = "A" * 10_000
+    prompt = coord._build_summary_prompt("テスト", long_content)
+    assert long_content in prompt
+
+
+def test_audit_prompt_uses_full_content_when_no_env(monkeypatch, tmp_path):
+    """RT_MAX_AUDIT_CHARS 未設定なら content 全文が audit_prompt に含まれる。"""
+    monkeypatch.delenv("RT_MAX_AUDIT_CHARS", raising=False)
+    from research_team.orchestrator.coordinator import ResearchCoordinator
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    long_content = "B" * 10_000
+    prompt = coord._build_audit_prompt("テスト", long_content)
+    assert long_content in prompt
+
+
 @pytest.mark.asyncio
 async def test_run_interactive_additional_request_loop(tmp_path):
     """調査完了後に追加リクエストを受け付けるループが動作することを検証"""
