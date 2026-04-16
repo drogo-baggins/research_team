@@ -35,7 +35,9 @@ research-team = "research_team.cli.main:app"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+addopts = "-m 'not interactive and not e2e'"
 markers = [
     "integration: integration tests requiring external services",
     "e2e: end-to-end tests requiring pi-agent and github-copilot login",
+    "interactive: tests requiring a visible browser and manual interaction (skipped by default)",
 ]

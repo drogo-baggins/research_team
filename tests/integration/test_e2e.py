@@ -51,6 +51,7 @@ async def test_research_coordinator_quick(tmp_path):
     assert len(content) > 50, f"Output too short: {len(content)} chars"
 
 
+@pytest.mark.interactive
 @pytest.mark.asyncio
 async def test_ui_integration(tmp_path, dummy_search_server, monkeypatch):
     from playwright.async_api import async_playwright
@@ -82,13 +83,13 @@ async def test_ui_integration(tmp_path, dummy_search_server, monkeypatch):
             logs_appended.append((status, text))
             await _orig_append_log(status, text)
 
-        async def _auto_approve(url, title):
-            approval_calls.append((url, title))
+        async def _auto_capture(url):
+            approval_calls.append(url)
             return True
 
         ui.append_agent_message = _spy_agent
         ui.append_log = _spy_log
-        ui.request_content_approval = _auto_approve
+        ui.wait_for_capture = _auto_capture
 
         coordinator = ResearchCoordinator(workspace_dir=str(workspace), ui=ui)
 

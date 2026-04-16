@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -93,6 +94,63 @@ class ArtifactWriter:
         path = self._dir / f"specialist_{safe_name}_run{run_id}_{date_str}.md"
         header = f"# 調査中間成果物 — {specialist_name} / Run {run_id} ({date_str})\n\n"
         path.write_text(header + content, encoding="utf-8")
+        return str(path)
+
+    def write_raw_tool_result(
+        self,
+        run_id: int,
+        specialist_name: str,
+        tool_name: str,
+        call_index: int,
+        result_data: dict,
+    ) -> str:
+        """web_search / web_fetch の生結果を raw/ サブディレクトリに即時保存する。"""
+        date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = re.sub(r"[^\w\u3040-\u30ff\u4e00-\u9fff]", "_", specialist_name)
+        raw_dir = self._dir / "raw"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{safe_name}_run{run_id}_{tool_name}_{call_index:03d}_{date_str}.md"
+        path = raw_dir / filename
+
+        if tool_name == "web_search":
+            query = result_data.get("query", "")
+            results = result_data.get("results", [])
+            lines = [
+                f"# web_search — {specialist_name} / Run {run_id} / #{call_index}",
+                "",
+                f"**クエリ:** {query}",
+                f"**件数:** {len(results)}",
+                "",
+                "## 結果",
+                "",
+            ]
+            for i, r in enumerate(results, 1):
+                lines.append(f"### {i}. {r.get('title', '(no title)')}")
+                lines.append(f"- URL: {r.get('url', '')}")
+                lines.append(f"- スニペット: {r.get('content', '')}")
+                lines.append("")
+        elif tool_name == "web_fetch":
+            url = result_data.get("url", "")
+            content = result_data.get("content", "")
+            lines = [
+                f"# web_fetch — {specialist_name} / Run {run_id} / #{call_index}",
+                "",
+                f"**URL:** {url}",
+                "",
+                "## 取得内容",
+                "",
+                content,
+            ]
+        else:
+            lines = [
+                f"# {tool_name} — {specialist_name} / Run {run_id} / #{call_index}",
+                "",
+                "```json",
+                json.dumps(result_data, ensure_ascii=False, indent=2),
+                "```",
+            ]
+
+        path.write_text("\n".join(lines), encoding="utf-8")
         return str(path)
 
     @classmethod

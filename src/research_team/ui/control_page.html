@@ -11,88 +11,167 @@
       display: flex; flex-direction: column; height: 100vh;
     }
     header {
-      background: #16213e; padding: 10px 20px;
+      background: #16213e; padding: 8px 20px;
       border-bottom: 1px solid #0f3460;
-      font-size: 14px; color: #a0a0c0;
+      font-size: 13px; color: #a0a0c0; flex-shrink: 0;
     }
-    .main { display: flex; flex: 1; overflow: hidden; }
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      flex: 1;
+      overflow: hidden;
+    }
 
+    /* ==================== 左: チャットペイン ==================== */
     .chat-pane {
-      flex: 1; display: flex; flex-direction: column;
+      display: flex; flex-direction: column;
       border-right: 1px solid #0f3460;
+      overflow: hidden;
     }
     .chat-messages {
-      flex: 1; overflow-y: auto; padding: 16px;
-      display: flex; flex-direction: column; gap: 10px;
+      flex: 1; overflow-y: auto; padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 6px;
     }
-    .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+
+    /* エージェント応答バブル */
+    .msg { max-width: 88%; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5; }
     .msg.agent { background: #0f3460; align-self: flex-start; }
     .msg.user  { background: #533483; align-self: flex-end; }
-    .msg .sender { font-size: 11px; opacity: 0.6; margin-bottom: 4px; }
+    .msg .sender { font-size: 10px; opacity: 0.55; margin-bottom: 3px; }
+
+    /* ログ行（コンパクト） */
+    .msg.log {
+      background: transparent; align-self: flex-start;
+      padding: 1px 4px; font-size: 11px; color: #8899bb;
+      display: flex; gap: 5px; align-items: baseline;
+      max-width: 100%;
+    }
+    .msg.log .log-icon { flex-shrink: 0; }
+    .msg.log .log-icon.done    { color: #4ade80; }
+    .msg.log .log-icon.running { color: #facc15; }
+    .msg.log .log-icon.pending { color: #444; }
+    .msg.log .log-icon.error   { color: #f87171; }
+    .msg.log .log-icon.warn    { color: #fb923c; }
+
+    /* ストリームチャンク */
+    .msg.stream-chunk {
+      background: #0a1628; align-self: flex-start;
+      font-family: monospace; font-size: 11px; color: #7fb3e8;
+      padding: 4px 8px; border-radius: 6px;
+      white-space: pre-wrap; word-break: break-word;
+      max-width: 100%; line-height: 1.5;
+    }
+    .msg.stream-chunk .stream-label {
+      font-size: 9px; color: #facc15; margin-bottom: 2px; font-family: system-ui;
+    }
+
     .chat-input {
-      display: flex; gap: 8px; padding: 12px 16px;
-      border-top: 1px solid #0f3460; background: #16213e;
+      display: flex; gap: 8px; padding: 10px 12px;
+      border-top: 1px solid #0f3460; background: #16213e; flex-shrink: 0;
     }
     .chat-input textarea {
       flex: 1; background: #0f3460; border: none; border-radius: 8px;
-      color: #e0e0e0; padding: 8px 12px; font-size: 14px; resize: none;
-      outline: none; height: 40px;
+      color: #e0e0e0; padding: 7px 11px; font-size: 13px; resize: none;
+      outline: none; height: 36px; font-family: inherit;
     }
     .chat-input button {
       background: #533483; color: #fff; border: none;
-      border-radius: 8px; padding: 0 18px; cursor: pointer; font-size: 14px;
+      border-radius: 8px; padding: 0 16px; cursor: pointer; font-size: 13px;
     }
     .chat-input button:hover { background: #6b44a0; }
 
+    /* ==================== 右: 固定パネル ==================== */
     .right-pane {
-      width: 340px; display: flex; flex-direction: column;
-      background: #16213e;
+      display: flex; flex-direction: column;
+      background: #16213e; overflow: hidden;
     }
 
-    .stream-pane {
-      flex: 0 0 auto; max-height: 45%; display: flex; flex-direction: column;
-      border-bottom: 1px solid #0f3460;
-    }
-    .stream-pane h3 {
-      padding: 10px 16px; font-size: 13px;
-      border-bottom: 1px solid #0f3460; color: #a0a0c0;
-      flex-shrink: 0;
-    }
-    .stream-box {
-      flex: 1; overflow-y: auto; padding: 10px 14px;
-      font-size: 12px; line-height: 1.6; font-family: monospace;
-      color: #b0d4ff; white-space: pre-wrap; word-break: break-word;
-      min-height: 80px;
-    }
-    .stream-agent-label {
-      font-size: 10px; color: #facc15; margin-bottom: 2px;
+    /* パネル共通ヘッダー */
+    .panel-header {
+      padding: 8px 14px; font-size: 12px; color: #a0a0c0;
+      border-bottom: 1px solid #0f3460; flex-shrink: 0;
+      display: flex; align-items: center; gap: 6px;
     }
 
-    .progress-pane {
+    /* ── WBSパネル ── */
+    .wbs-pane {
       flex: 1; display: flex; flex-direction: column;
+      border-bottom: 1px solid #0f3460; overflow: hidden;
     }
-    .progress-pane h3 {
-      padding: 10px 16px; font-size: 13px;
-      border-bottom: 1px solid #0f3460; color: #a0a0c0;
-      flex-shrink: 0;
+    .wbs-body {
+      flex: 1; overflow-y: auto; padding: 6px 0;
     }
-    .progress-log {
-      flex: 1; overflow-y: auto; padding: 10px 14px;
-      display: flex; flex-direction: column; gap: 6px;
+    .wbs-empty {
+      padding: 16px 14px; font-size: 11px; color: #444; font-style: italic;
     }
-    .log-item { font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
-    .log-item .icon { width: 16px; flex-shrink: 0; }
-    .log-item .done { color: #4ade80; }
-    .log-item .running { color: #facc15; }
-    .log-item .pending { color: #555; }
-    .log-item .error { color: #f87171; }
-    .log-item .warn { color: #fb923c; }
 
+    /* マイルストーン行 */
+    .milestone-row {
+      padding: 5px 14px 3px;
+      font-size: 11px; font-weight: 600; color: #7090c0;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+
+    /* WBSタスク行 */
+    .wbs-task {
+      display: flex; align-items: center; gap: 7px;
+      padding: 3px 14px 3px 22px;
+      font-size: 12px; line-height: 1.4;
+    }
+    .wbs-task:hover { background: rgba(255,255,255,0.03); }
+    .wbs-task .task-icon { flex-shrink: 0; font-size: 11px; width: 14px; text-align: center; }
+    .wbs-task .task-title { flex: 1; color: #c8d8f0; }
+    .wbs-task.task-done .task-title { color: #556; text-decoration: line-through; }
+    .wbs-task .task-assignee {
+      font-size: 10px; color: #6070a0; flex-shrink: 0;
+      max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* タスクアイコン色 */
+    .task-icon.done    { color: #4ade80; }
+    .task-icon.running { color: #facc15; }
+    .task-icon.pending { color: #445; }
+
+    /* ── エージェント状態パネル ── */
+    .agents-pane {
+      flex: 0 0 auto; max-height: 42%;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .agents-body {
+      flex: 1; overflow-y: auto; padding: 8px 10px;
+      display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start;
+    }
+    .agents-empty {
+      padding: 12px 14px; font-size: 11px; color: #444; font-style: italic;
+    }
+
+    /* エージェントカード */
+    .agent-card {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #0f1e35; border-radius: 8px;
+      padding: 5px 10px; font-size: 12px;
+      border: 1px solid #1a3050;
+    }
+    .agent-card .agent-name { color: #c0d0f0; }
+    .agent-badge {
+      font-size: 10px; padding: 1px 6px; border-radius: 4px;
+      font-weight: 600; white-space: nowrap;
+    }
+    .agent-badge.idle      { background: #2a2a3a; color: #666; }
+    .agent-badge.working   { background: #3a3000; color: #facc15; }
+    .agent-badge.reviewing { background: #0a2a50; color: #60a5fa; }
+    .agent-badge.meeting   { background: #2a1040; color: #c084fc; }
+    .agent-badge.done      { background: #0a2a1a; color: #4ade80; }
+
+    /* ==================== 承認バナー（維持） ==================== */
     .approval-banner {
       display: none;
-      margin: 10px; padding: 12px 14px;
+      position: fixed; bottom: 16px; right: 16px; width: 320px;
+      padding: 12px 14px;
       background: #1e3a5f; border-radius: 10px;
-      border: 1px solid #3b82f6;
+      border: 2px solid #3b82f6;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+      z-index: 9999;
     }
     .approval-banner.visible { display: block; }
     .approval-banner .approval-url {
@@ -100,16 +179,12 @@
       margin-bottom: 4px; font-family: monospace;
     }
     .approval-banner .approval-title {
-      font-size: 13px; font-weight: bold; color: #e0e0e0;
-      margin-bottom: 6px;
+      font-size: 13px; font-weight: bold; color: #e0e0e0; margin-bottom: 6px;
     }
-    .approval-banner .approval-buttons {
-      display: flex; gap: 8px;
-    }
+    .approval-banner .approval-buttons { display: flex; gap: 8px; }
     .approval-banner .btn-approve {
       flex: 1; padding: 8px; background: #22c55e; color: #000;
-      border: none; border-radius: 8px; font-size: 13px;
-      font-weight: bold; cursor: pointer;
+      border: none; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer;
     }
     .approval-banner .btn-approve:hover { background: #16a34a; }
     .approval-banner .btn-reject {
@@ -117,14 +192,23 @@
       border: none; border-radius: 8px; font-size: 13px; cursor: pointer;
     }
     .approval-banner .btn-reject:hover { background: #4b5563; }
+
+    /* スクロールバー */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a3a5a; border-radius: 2px; }
   </style>
 </head>
 <body>
   <header>🔬 Research Team Control Panel</header>
   <div class="main">
 
+    <!-- 左: チャットペイン -->
     <div class="chat-pane">
       <div class="chat-messages" id="chatMessages"></div>
+      <!-- 既存コードとの互換のため非表示DOM維持 -->
+      <div id="progressLog" style="display:none"></div>
+      <div id="streamBox" style="display:none"></div>
       <div class="chat-input">
         <textarea id="chatInput" placeholder="メッセージを入力... (Enter: 送信, Shift+Enter: 改行)"
           onkeydown="handleKey(event)"></textarea>
@@ -132,73 +216,162 @@
       </div>
     </div>
 
+    <!-- 右: 固定パネル -->
     <div class="right-pane">
-      <div class="stream-pane">
-        <h3>⚡ エージェント出力</h3>
-        <div class="stream-box" id="streamBox"></div>
-      </div>
 
-      <div class="progress-pane">
-        <h3>📋 進捗ログ</h3>
-        <div class="progress-log" id="progressLog"></div>
-
-        <div class="approval-banner" id="approvalBanner">
-          <div class="approval-url" id="approvalUrl"></div>
-          <div class="approval-title" id="approvalTitle"></div>
-          <div class="approval-buttons">
-            <button class="btn-approve" onclick="signalApproval(true)">✅ 取り込む</button>
-            <button class="btn-reject" onclick="signalApproval(false)">❌ スキップ</button>
-          </div>
+      <!-- WBSパネル -->
+      <div class="wbs-pane">
+        <div class="panel-header">📋 WBS</div>
+        <div class="wbs-body" id="wbsBody">
+          <div class="wbs-empty" id="wbsEmpty">タスクはまだありません</div>
         </div>
       </div>
+
+      <!-- エージェント状態パネル -->
+      <div class="agents-pane">
+        <div class="panel-header">🤖 エージェント</div>
+        <div class="agents-body" id="agentsBody">
+          <div class="agents-empty" id="agentsEmpty">エージェントはまだいません</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 承認バナー -->
+  <div class="approval-banner" id="approvalBanner">
+    <div class="approval-url" id="approvalUrl"></div>
+    <div class="approval-title" id="approvalTitle"></div>
+    <div class="approval-buttons">
+      <button class="btn-approve" onclick="signalApproval(true)">✅ 取り込む</button>
+      <button class="btn-reject" onclick="signalApproval(false)">❌ スキップ</button>
     </div>
   </div>
 
   <script>
-    let _currentStreamAgent = null;
-    let _currentStreamEl = null;
+    // ── チャット ──────────────────────────────────────────────
 
     function appendMessage(sender, text, isUser) {
       const el = document.createElement('div');
       el.className = 'msg ' + (isUser ? 'user' : 'agent');
-      el.innerHTML = `<div class="sender">${sender}</div><div>${escapeHtml(text)}</div>`;
+      el.innerHTML = `<div class="sender">${escapeHtml(sender)}</div><div>${escapeHtml(text)}</div>`;
+      _appendToChat(el);
+    }
+
+    function appendLog(status, text) {
+      const icons = { done: '✓', running: '›', pending: '○', error: '✕', warn: '!' };
+      const el = document.createElement('div');
+      el.className = 'msg log';
+      el.innerHTML = `<span class="log-icon ${escapeHtml(status)}">${icons[status] || '·'}</span>`
+                   + `<span>${escapeHtml(text)}</span>`;
+      _appendToChat(el);
+    }
+
+    let _currentStreamAgent = null;
+    let _currentStreamEl = null;
+
+    function streamDelta(agentName, delta) {
+      if (_currentStreamAgent !== agentName) {
+        _currentStreamAgent = agentName;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'msg stream-chunk';
+        wrapper.innerHTML = `<div class="stream-label">▶ ${escapeHtml(agentName)}</div>`;
+        _currentStreamEl = document.createElement('span');
+        wrapper.appendChild(_currentStreamEl);
+        _appendToChat(wrapper);
+      }
+      if (_currentStreamEl) {
+        _currentStreamEl.textContent += delta;
+        // 親要素ごとスクロール
+        const box = document.getElementById('chatMessages');
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+
+    function _appendToChat(el) {
       const box = document.getElementById('chatMessages');
       box.appendChild(el);
       box.scrollTop = box.scrollHeight;
     }
 
-    function appendLog(status, text) {
-      const icons = { done: '✓', running: '→', pending: '○' };
-      const el = document.createElement('div');
-      el.className = 'log-item';
-      el.innerHTML = `<span class="icon ${status}">${icons[status]||'·'}</span><span>${escapeHtml(text)}</span>`;
-      const log = document.getElementById('progressLog');
-      log.appendChild(el);
-      log.scrollTop = log.scrollHeight;
+    // ── WBS パネル ────────────────────────────────────────────
+
+    function setWbs(milestones) {
+      const body = document.getElementById('wbsBody');
+      document.getElementById('wbsEmpty').style.display = 'none';
+      // 既存の milestone/task 行をクリア（emptyは残す）
+      Array.from(body.children).forEach(c => {
+        if (!c.id) body.removeChild(c);
+      });
+      milestones.forEach(m => {
+        const mRow = document.createElement('div');
+        mRow.className = 'milestone-row';
+        mRow.textContent = m.title;
+        body.appendChild(mRow);
+        (m.tasks || []).forEach(t => {
+          body.appendChild(_buildTaskRow(t));
+        });
+      });
     }
 
-    function streamDelta(agentName, delta) {
-      const box = document.getElementById('streamBox');
-      if (_currentStreamAgent !== agentName) {
-        _currentStreamAgent = agentName;
-        const label = document.createElement('div');
-        label.className = 'stream-agent-label';
-        label.textContent = '▶ ' + agentName;
-        box.appendChild(label);
-        _currentStreamEl = document.createElement('div');
-        box.appendChild(_currentStreamEl);
+    function updateWbsTask(taskId, done) {
+      const row = document.getElementById('wbs-task-' + taskId);
+      if (!row) return;
+      const icon = row.querySelector('.task-icon');
+      if (done) {
+        row.classList.add('task-done');
+        icon.className = 'task-icon done';
+        icon.textContent = '✓';
+      } else {
+        row.classList.remove('task-done');
+        icon.className = 'task-icon pending';
+        icon.textContent = '○';
       }
-      if (_currentStreamEl) {
-        _currentStreamEl.textContent += delta;
-      }
-      box.scrollTop = box.scrollHeight;
     }
+
+    function _buildTaskRow(task) {
+      const row = document.createElement('div');
+      row.className = 'wbs-task' + (task.done ? ' task-done' : '');
+      row.id = 'wbs-task-' + task.id;
+      const iconClass = task.done ? 'done' : 'pending';
+      const iconChar  = task.done ? '✓' : '○';
+      row.innerHTML = `<span class="task-icon ${iconClass}">${iconChar}</span>`
+                    + `<span class="task-title">${escapeHtml(task.title)}</span>`
+                    + `<span class="task-assignee">${escapeHtml(task.assignee || '')}</span>`;
+      return row;
+    }
+
+    // ── エージェント状態パネル ────────────────────────────────
+
+    const STATUS_LABEL = {
+      idle: '待機中', working: '作業中', reviewing: 'レビュー中',
+      meeting: '会議中', done: '完了'
+    };
+
+    function setAgentStatus(agentName, status) {
+      document.getElementById('agentsEmpty').style.display = 'none';
+      const cardId = 'agent-card-' + agentName.replace(/\s+/g, '_');
+      let card = document.getElementById(cardId);
+      if (!card) {
+        card = document.createElement('div');
+        card.className = 'agent-card';
+        card.id = cardId;
+        card.innerHTML = `<span class="agent-name">${escapeHtml(agentName)}</span>`
+                       + `<span class="agent-badge" id="${cardId}-badge"></span>`;
+        document.getElementById('agentsBody').appendChild(card);
+      }
+      const badge = document.getElementById(cardId + '-badge');
+      badge.className = 'agent-badge ' + (status || 'idle');
+      badge.textContent = STATUS_LABEL[status] || status;
+    }
+
+    // ── 承認バナー ────────────────────────────────────────────
 
     function setApprovalVisible(visible, url, title) {
       const banner = document.getElementById('approvalBanner');
       if (visible) {
-        document.getElementById('approvalUrl').textContent = url;
-        document.getElementById('approvalTitle').textContent = title;
+        document.getElementById('approvalUrl').textContent = url || '';
+        document.getElementById('approvalTitle').textContent = title || '';
       }
       banner.classList.toggle('visible', visible);
     }
@@ -207,6 +380,8 @@
       setApprovalVisible(false, '', '');
       window.__rt_signal({ type: 'approval_done', approved: approved });
     }
+
+    // ── チャット送信 ──────────────────────────────────────────
 
     function sendChat() {
       const input = document.getElementById('chatInput');
@@ -221,8 +396,13 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
     }
 
+    // ── ユーティリティ ────────────────────────────────────────
+
     function escapeHtml(str) {
-      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
   </script>
 </body>

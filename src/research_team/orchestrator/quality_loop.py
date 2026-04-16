@@ -1,6 +1,9 @@
+import logging
 import os
 from collections.abc import Callable, Awaitable
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class QualityFeedback(BaseModel):
@@ -32,7 +35,17 @@ class QualityLoop:
 
         for iteration in range(1, self.max_iterations + 1):
             if self._evaluator:
-                last_result = await self._evaluator(content)
+                try:
+                    last_result = await self._evaluator(content)
+                except Exception as exc:
+                    logger.error("QualityLoop: evaluator failed on iteration %d: %s", iteration, exc, exc_info=True)
+                    last_result = QualityFeedback(
+                        passed=False,
+                        score=0.0,
+                        improvements=[f"評価エラー（イテレーション{iteration}）: {exc}"],
+                        escalate_to_user=True,
+                    )
+                    break
             else:
                 last_result = QualityFeedback(passed=True, score=1.0)
 
@@ -44,6 +57,10 @@ class QualityLoop:
                 break
 
             if on_iteration:
-                content = await on_iteration(iteration, last_result)
+                try:
+                    content = await on_iteration(iteration, last_result)
+                except Exception as exc:
+                    logger.error("QualityLoop: on_iteration failed on iteration %d: %s", iteration, exc)
+                    break
 
         return last_result

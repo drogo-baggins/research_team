@@ -1,10 +1,14 @@
 import asyncio
+import logging
+import os
 import traceback
 from typing import Optional
 import typer
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="Research Team Agent System")
 
@@ -26,6 +30,15 @@ def start(
     from playwright.async_api import async_playwright
 
     async def _run():
+        log_path = os.path.join(os.getcwd(), "rt_run.log")
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s %(name)s %(levelname)s %(message)s",
+            handlers=[
+                logging.FileHandler(log_path, encoding="utf-8"),
+                logging.StreamHandler(),
+            ],
+        )
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=False)
             ui = ControlUI(browser)
@@ -39,14 +52,13 @@ def start(
                 await coordinator.run_interactive(depth=depth, output_format=output_format)
             except Exception as exc:
                 tb = traceback.format_exc()
-                try:
-                    await ui.append_agent_message("System", f"致命的エラー: {exc}")
-                    await ui.append_log("running", tb)
-                except Exception:
-                    pass
+                logger.error("fatal error:\n%s", tb)
+                await ui.append_agent_message("System", f"致命的エラー: {exc}")
+                await ui.append_log("running", tb)
                 typer.echo(f"Error: {exc}\n{tb}", err=True)
+                raise
 
-            await asyncio.Event().wait()
+            await ui.wait_until_closed()
 
     asyncio.run(_run())
 

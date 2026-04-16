@@ -47,3 +47,54 @@ def test_for_session_write_creates_file(tmp_path):
     path = writer.write_specialist_draft(1, "専門家A", "内容" * 30)
     assert Path(path).exists()
     assert "sessions" in path
+
+
+from pathlib import Path as _Path
+
+def test_write_raw_tool_result_web_search(tmp_path):
+    from research_team.output.artifact_writer import ArtifactWriter
+    writer = ArtifactWriter(tmp_path / "artifacts")
+    path = writer.write_raw_tool_result(
+        run_id=1,
+        specialist_name="地政学アナリスト",
+        tool_name="web_search",
+        call_index=0,
+        result_data={"query": "ホルムズ海峡 2026", "results": [{"title": "test", "url": "https://example.com", "content": "snippet"}]},
+    )
+    saved = _Path(path)
+    assert saved.exists()
+    text = saved.read_text(encoding="utf-8")
+    assert "web_search" in text
+    assert "ホルムズ海峡 2026" in text
+
+
+def test_write_raw_tool_result_web_fetch(tmp_path):
+    from research_team.output.artifact_writer import ArtifactWriter
+    writer = ArtifactWriter(tmp_path / "artifacts")
+    path = writer.write_raw_tool_result(
+        run_id=1,
+        specialist_name="エネルギーアナリスト",
+        tool_name="web_fetch",
+        call_index=2,
+        result_data={"url": "https://example.com", "content": "Full page content here"},
+    )
+    saved = _Path(path)
+    assert saved.exists()
+    text = saved.read_text(encoding="utf-8")
+    assert "web_fetch" in text
+    assert "https://example.com" in text
+
+
+def test_write_raw_tool_result_creates_raw_subdir(tmp_path):
+    from research_team.output.artifact_writer import ArtifactWriter
+    writer = ArtifactWriter(tmp_path / "artifacts")
+    writer.write_raw_tool_result(
+        run_id=1,
+        specialist_name="テスト",
+        tool_name="web_search",
+        call_index=0,
+        result_data={"query": "test"},
+    )
+    raw_dir = tmp_path / "artifacts" / "raw"
+    assert raw_dir.exists()
+    assert any(raw_dir.iterdir())

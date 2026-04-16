@@ -1,7 +1,10 @@
 import asyncio
 import json
+import logging
 from pathlib import Path
 from playwright.async_api import Browser, BrowserContext, Page
+
+logger = logging.getLogger(__name__)
 
 
 _HTML_PATH = Path(__file__).parent / "control_page.html"
@@ -15,12 +18,42 @@ class ControlUI:
         self._chat_queue: asyncio.Queue[str] = asyncio.Queue()
         self._approval_event: asyncio.Event = asyncio.Event()
         self._approval_result: bool = False
+        self._pending_approval_url: str | None = None
+        self._closed_event: asyncio.Event = asyncio.Event()
+
+    @property
+    def closed(self) -> bool:
+        return self._closed_event.is_set()
+
+    async def wait_until_closed(self) -> None:
+        await self._closed_event.wait()
 
     async def start(self) -> None:
-        self._context = await self._browser.new_context()
-        self._page = await self._context.new_page()
-        await self._page.expose_binding("__rt_signal", self._handle_signal)
-        await self._page.goto(_HTML_PATH.as_uri())
+        from playwright.async_api import Error as PlaywrightError
+        try:
+            self._context = await self._browser.new_context()
+            self._page = await self._context.new_page()
+            await self._page.expose_binding("__rt_signal", self._handle_signal)
+            self._page.on("load", self._on_page_load)
+            self._page.on("close", self._on_page_close)
+            await self._page.goto(_HTML_PATH.as_uri())
+        except PlaywrightError as exc:
+            logger.error("ControlUI.start: failed to initialize browser UI: %s", exc)
+            self._closed_event.set()
+            raise
+
+    def _on_page_close(self, page: Page) -> None:
+        self._closed_event.set()
+        self._approval_event.set()
+        self._chat_queue.put_nowait("")
+
+    async def _on_page_load(self, page: Page) -> None:
+        if self._pending_approval_url is not None:
+            safe_url = json.dumps(self._pending_approval_url)
+            try:
+                await page.evaluate(f"setApprovalVisible(true, {safe_url})")
+            except Exception:
+                pass
 
     def _is_alive(self) -> bool:
         return self._page is not None and not self._page.is_closed()
@@ -36,37 +69,87 @@ class ControlUI:
     async def append_agent_message(self, sender: str, text: str) -> None:
         if not self._is_alive():
             return
-        safe_sender = json.dumps(sender)
-        safe_text = json.dumps(text)
-        await self._page.evaluate(f"appendMessage({safe_sender}, {safe_text}, false)")
+        assert self._page
+        try:
+            safe_sender = json.dumps(sender)
+            safe_text = json.dumps(text)
+            await self._page.evaluate(f"appendMessage({safe_sender}, {safe_text}, false)")
+        except Exception:
+            pass
 
     async def append_log(self, status: str, text: str) -> None:
         if not self._is_alive():
             return
-        safe_status = json.dumps(status)
-        safe_text = json.dumps(text)
-        await self._page.evaluate(f"appendLog({safe_status}, {safe_text})")
+        assert self._page
+        try:
+            safe_status = json.dumps(status)
+            safe_text = json.dumps(text)
+            await self._page.evaluate(f"appendLog({safe_status}, {safe_text})")
+        except Exception:
+            pass
 
     async def stream_delta(self, agent_name: str, delta: str) -> None:
         if not self._is_alive():
             return
-        safe_name = json.dumps(agent_name)
-        safe_delta = json.dumps(delta)
-        await self._page.evaluate(f"streamDelta({safe_name}, {safe_delta})")
+        assert self._page
+        try:
+            safe_name = json.dumps(agent_name)
+            safe_delta = json.dumps(delta)
+            await self._page.evaluate(f"streamDelta({safe_name}, {safe_delta})")
+        except Exception:
+            pass
+
+    async def set_wbs(self, milestones: list[dict]) -> None:
+        if not self._is_alive():
+            return
+        assert self._page
+        try:
+            await self._page.evaluate(f"setWbs({json.dumps(milestones)})")
+        except Exception:
+            pass
+
+    async def update_wbs_task(self, task_id: str, done: bool) -> None:
+        if not self._is_alive():
+            return
+        assert self._page
+        try:
+            await self._page.evaluate(f"updateWbsTask({json.dumps(task_id)}, {json.dumps(done)})")
+        except Exception:
+            pass
+
+    async def set_agent_status(self, agent_name: str, status: str) -> None:
+        if not self._is_alive():
+            return
+        assert self._page
+        try:
+            await self._page.evaluate(f"setAgentStatus({json.dumps(agent_name)}, {json.dumps(status)})")
+        except Exception:
+            pass
 
     async def wait_for_user_message(self) -> str:
-        return await self._chat_queue.get()
+        msg = await self._chat_queue.get()
+        return msg
 
-    async def request_content_approval(self, url: str, title: str) -> bool:
+    async def wait_for_capture(self, url: str) -> bool:
+        logger.warning("wait_for_capture CALLED: url=%s", url)
         self._approval_event.clear()
         self._approval_result = False
+        self._pending_approval_url = url
         if self._is_alive():
-            safe_url = json.dumps(url)
-            safe_title = json.dumps(title)
-            await self._page.evaluate(
-                f"setApprovalVisible(true, {safe_url}, {safe_title})"
-            )
+            assert self._page
+            logger.warning("wait_for_capture: page is alive, calling setApprovalVisible")
+            try:
+                safe_url = json.dumps(url)
+                await self._page.evaluate(f"setApprovalVisible(true, {safe_url})")
+                logger.warning("wait_for_capture: setApprovalVisible done, waiting for event")
+            except Exception:
+                self._approval_event.set()
+        else:
+            logger.warning("wait_for_capture: page is NOT alive, skipping evaluate")
+            self._approval_event.set()
         await self._approval_event.wait()
+        self._pending_approval_url = None
+        logger.warning("wait_for_capture: event fired, result=%s", self._approval_result)
         return self._approval_result
 
     async def close(self) -> None:

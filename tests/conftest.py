@@ -2,6 +2,9 @@ import asyncio
 import threading
 import pytest
 from aiohttp import web
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def _build_app() -> web.Application:
