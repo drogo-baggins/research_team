@@ -28,12 +28,24 @@ class HumanSearchEngine(SearchEngine):
             if self._browser is None:
                 try:
                     self._playwright = await async_playwright().start()
-                    self._browser = await self._playwright.chromium.launch(headless=False)
+                    self._browser = await self._playwright.chromium.launch(
+                        headless=False,
+                        args=["--disable-blink-features=AutomationControlled"],
+                    )
                 except PlaywrightError as exc:
                     logger.error("HumanSearchEngine: failed to launch browser: %s", exc)
                     raise
             try:
-                self._context = await self._browser.new_context()
+                self._context = await self._browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0.0.0 Safari/537.36"
+                    )
+                )
+                await self._context.add_init_script(
+                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                )
             except PlaywrightError as exc:
                 logger.error("HumanSearchEngine: failed to create browser context: %s", exc)
                 raise
@@ -56,13 +68,13 @@ class HumanSearchEngine(SearchEngine):
     def _ui_closed(self) -> bool:
         return self._control_ui is not None and self._control_ui.closed
 
-    async def _require_approval(self, page: Page) -> bool:
+    async def _require_approval(self, url: str) -> bool:
         if self._control_ui is None:
             return True
         if self._control_ui.closed:
             return False
         try:
-            return await self._control_ui.wait_for_capture(page.url)
+            return await self._control_ui.wait_for_capture(url)
         except Exception as exc:
             logger.warning("HumanSearchEngine._require_approval: unexpected error: %s", exc)
             return True
@@ -73,6 +85,7 @@ class HumanSearchEngine(SearchEngine):
             return []
         async with self._lock:
             search_url = f"{self._search_engine_url}{query.replace(' ', '+')}"
+
             logger.debug("HumanSearchEngine.search: navigating to %s", search_url)
             try:
                 page = await self._navigate(search_url)
@@ -81,23 +94,16 @@ class HumanSearchEngine(SearchEngine):
                 return []
             logger.debug("HumanSearchEngine.search: page opened, url=%s", page.url)
 
+            approved = await self._require_approval(search_url)
+            if not approved:
+                logger.info("HumanSearchEngine.search: user rejected query: %s", query)
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+                return []
+
             try:
-                approved = await self._require_approval(page)
-                if not approved:
-                    logger.info("User skipped search results page for query: %s", query)
-                    return []
-
-                if page.url != search_url and not page.url.startswith(search_url):
-                    logger.debug(
-                        "HumanSearchEngine.search: page URL drifted after approval (%s), re-navigating to %s",
-                        page.url,
-                        search_url,
-                    )
-                    try:
-                        await page.goto(search_url, wait_until="domcontentloaded", timeout=0)
-                    except PlaywrightError as e:
-                        logger.warning("HumanSearchEngine.search: re-navigation failed: %s", e)
-
                 try:
                     await page.wait_for_selector("#rso", timeout=5000)
                     logger.debug("HumanSearchEngine.search: #rso appeared in DOM")
@@ -140,7 +146,7 @@ class HumanSearchEngine(SearchEngine):
                 logger.warning("HumanSearchEngine.fetch: navigation failed: %s", e)
                 return SearchResult(url=url, title="", content="", source="human")
 
-            approved = await self._require_approval(page)
+            approved = await self._require_approval(url)
             if not approved:
                 try:
                     await page.close()

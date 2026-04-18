@@ -97,11 +97,18 @@ def _is_negative(text: str) -> bool:
     return False
 
 
-def _format_topic_confirmation(topic: str) -> str:
+def _format_topic_confirmation(topic: str, depth: str = "standard") -> str:
+    depth_labels = {
+        "quick": "クイック（簡易調査）",
+        "standard": "スタンダード（標準調査）",
+        "deep": "ディープ（詳細調査）",
+    }
+    depth_label = depth_labels.get(depth, depth)
     lines = [
         "ご依頼内容を整理しました。",
         "",
         f"**調査テーマ:** {topic}",
+        f"**調査深度:** {depth_label}",
         "",
         "上記の内容で調査を開始してよろしいでしょうか？",
         "修正がある場合は内容をそのまま入力してください。",
@@ -114,11 +121,16 @@ def _build_research_task(
     feedback: QualityFeedback | None,
     agent_name: str,
     reference_content: str = "",
+    style: str = "research_report",
 ) -> str:
+    style_instruction = _STYLE_INSTRUCTIONS.get(style, _STYLE_INSTRUCTIONS["research_report"])
     base = (
         f"以下のテーマについて詳細な調査を行い、調査結果をMarkdown形式でまとめてください。"
         f"\n\nテーマ: {topic}"
         f"\n\nweb_search および web_fetch ツールを積極的に活用して、最新の情報を収集してください。"
+        f"\n\n【出力形式の指示】{style_instruction}"
+        f"\n\n【重要】調査結果のみをMarkdown形式で出力してください。"
+        f"思考過程、謝罪文、「検索します」などの作業説明は一切含めないでください。"
     )
     if reference_content:
         base += f"\n\n参照情報:\n{reference_content}"
@@ -146,6 +158,28 @@ _STYLE_OPTIONS: dict[str, tuple[str, str]] = {
     "3": ("magazine_column", "マガジンコラム（物語的・読みやすい）"),
     "4": ("book_chapter", "書籍チャプター（詳細・叙述的）"),
 }
+
+_STYLE_INSTRUCTIONS: dict[str, str] = {
+    "research_report": (
+        "正式な調査レポート形式で記述してください。"
+        "客観的な文体、出典URL付きの引用、セクション見出しを用いて構造化してください。"
+    ),
+    "executive_memo": (
+        "エグゼクティブメモ形式で記述してください。"
+        "結論・提言を冒頭に置き、根拠を簡潔に続けてください。全体を500字以内に収めてください。"
+    ),
+    "magazine_column": (
+        "マガジンコラム形式で記述してください。"
+        "読者を引き込む導入から始め、物語的・読みやすい文体で展開してください。"
+    ),
+    "book_chapter": (
+        "書籍の一章として記述してください。"
+        "章タイトル・節タイトルを設け、詳細かつ叙述的に展開してください。"
+        "導入・本論・まとめの構成を守り、読者が通読できる完成した章にしてください。"
+    ),
+}
+
+_STYLES_WITHOUT_EXEC_SUMMARY = {"book_chapter", "magazine_column"}
 
 
 class ResearchCoordinator:
@@ -265,6 +299,7 @@ class ResearchCoordinator:
     ) -> str:
         parts: list[str] = []
         events: list[AgentEvent] = []
+        pending_tool_args: dict[str, dict] = {}
         await self._set_agent_status(agent_name, "working")
         await self._log("running", f"{agent_name} が処理中...")
         timeout_sec = float(os.environ.get("RT_AGENT_TIMEOUT_SEC", "1800"))
@@ -283,6 +318,7 @@ class ResearchCoordinator:
                         case "tool_execution_start":
                             tool = event.data.get("toolName", "")
                             args = event.data.get("args", {})
+                            pending_tool_args[tool] = args
                             if tool == "web_search":
                                 q = args.get("query", "")
                                 await self._log("running", f"🔍 {agent_name}: web_search 「{q}」")
@@ -301,7 +337,8 @@ class ResearchCoordinator:
 
                             # ゼロトラスト蓄積: 生ツール結果を即時保存
                             if artifact_writer and tool in ("web_search", "web_fetch") and not is_error:
-                                result_data = event.data.get("result") or event.data.get("args", {})
+                                start_args = pending_tool_args.get(tool, {})
+                                result_data = {**start_args, **(event.data.get("result") or {})}
                                 try:
                                     call_index = sum(
                                         1 for e in events
@@ -393,6 +430,20 @@ class ResearchCoordinator:
             f"{body}\n\n"
             f"この調査結果から、意思決定者向けに300字以内の「エグゼクティブサマリー」を書いてください。"
             f"最重要な発見を3点、箇条書きで含めてください。日本語で記述してください。"
+            f"\n\n【重要】サマリー本文のみを出力してください。説明や前置きは不要です。"
+        )
+
+    def _build_format_prompt(self, topic: str, content: str, style: str) -> str:
+        max_chars = os.environ.get("RT_MAX_SUMMARY_CHARS")
+        body = content[:int(max_chars)] if max_chars else content
+        style_instruction = _STYLE_INSTRUCTIONS.get(style, "")
+        return (
+            f"以下は「{topic}」についての専門家調査結果（生データ）です。\n\n"
+            f"{body}\n\n"
+            f"上記の調査データを元に、完成した読み物として整形してください。\n"
+            f"【形式指示】{style_instruction}\n"
+            f"【重要】整形済みのMarkdown本文のみを出力してください。"
+            f"説明文、前置き、謝罪文、作業説明は一切含めないでください。"
         )
 
     def _build_audit_prompt(self, topic: str, content: str) -> str:
@@ -463,6 +514,7 @@ class ResearchCoordinator:
                 reference_content,
                 run_id=run_id,
                 artifact_writer=artifact_writer,
+                style=request.style,
             )
             if previous_content and new_content:
                 # 前回内容を保持し、新発見を追記（ゼロトラスト蓄積）
@@ -480,14 +532,21 @@ class ResearchCoordinator:
             reference_content,
             run_id=run_id,
             artifact_writer=artifact_writer,
+            style=request.style,
         )
 
-        summary_prompt = self._build_summary_prompt(topic, combined_content)
-        exec_summary = await self._stream_agent_output(self._csm, summary_prompt, "CSM")
-        if exec_summary:
-            combined_content = (
-                f"## エグゼクティブサマリー\n\n{exec_summary}\n\n---\n\n{combined_content}"
-            )
+        if request.style in _STYLES_WITHOUT_EXEC_SUMMARY:
+            format_prompt = self._build_format_prompt(topic, combined_content, request.style)
+            formatted = await self._stream_agent_output(self._csm, format_prompt, "CSM")
+            if formatted:
+                combined_content = formatted
+        else:
+            summary_prompt = self._build_summary_prompt(topic, combined_content)
+            exec_summary = await self._stream_agent_output(self._csm, summary_prompt, "CSM")
+            if exec_summary:
+                combined_content = (
+                    f"## エグゼクティブサマリー\n\n{exec_summary}\n\n---\n\n{combined_content}"
+                )
 
         active_id = self._project_manager.get_active_id()
         if active_id:
@@ -565,10 +624,11 @@ class ResearchCoordinator:
         reference_content: str = "",
         run_id: int = 0,
         artifact_writer: ArtifactWriter | None = None,
+        style: str = "research_report",
     ) -> str:
         sections: list[str] = []
         for i, (name, agent) in enumerate(factory.agents.items()):
-            task_message = _build_research_task(topic, feedback, name, reference_content)
+            task_message = _build_research_task(topic, feedback, name, reference_content, style=style)
             section = await self._stream_agent_output(
                 agent,
                 task_message,
@@ -610,15 +670,6 @@ class ResearchCoordinator:
         min_length = {"quick": 300, "standard": 800, "deep": 2000}.get(depth, 800)
         if len(content) < min_length:
             issues.append(f"内容が不十分です（{len(content)}文字 / 目標{min_length}文字）")
-
-        if depth != "quick":
-            urls = re.findall(r"https?://\S+", content)
-            if len(urls) < 2:
-                issues.append(f"情報ソースの引用が不足しています（{len(urls)}件 / 最低2件）")
-
-        headings = re.findall(r"^#{1,3} .+", content, re.MULTILINE)
-        if len(headings) < 2:
-            issues.append("レポートの構造が不足しています（見出しが2つ未満）")
 
         if issues:
             return QualityFeedback(
@@ -671,7 +722,7 @@ class ResearchCoordinator:
                 break
 
             while True:
-                await self._ui.append_agent_message("CSM", _format_topic_confirmation(topic))
+                await self._ui.append_agent_message("CSM", _format_topic_confirmation(topic, depth))
                 answer = await self._ui.wait_for_user_message()
                 if _is_affirmative(answer):
                     break

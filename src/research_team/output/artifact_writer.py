@@ -132,6 +132,8 @@ class ArtifactWriter:
         elif tool_name == "web_fetch":
             url = result_data.get("url", "")
             content = result_data.get("content", "")
+            if isinstance(content, list):
+                content = "\n".join(str(c) for c in content)
             lines = [
                 f"# web_fetch — {specialist_name} / Run {run_id} / #{call_index}",
                 "",

@@ -80,7 +80,7 @@ Write EVERYTHING here. Long responses are expected and desired.
 If `web_search` fails or returns no results:
 1. Immediately retry with a different query (simpler keywords, English translation of key terms)
 2. Try at least 3 alternative queries before giving up on a subtopic
-3. If ALL searches fail for a subtopic: write `[検索失敗: {query}]` and continue with other subtopics
+3. If ALL searches fail for a subtopic: write `[検索失敗: {{query}}]` and continue with other subtopics
 4. NEVER return an error message asking the user for URLs — make your best effort with available tools
 
 If `web_fetch` fails for a URL:

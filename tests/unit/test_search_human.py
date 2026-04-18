@@ -77,17 +77,17 @@ async def test_search_falls_back_to_single_result_when_extractor_finds_nothing()
 
 @pytest.mark.asyncio
 async def test_search_returns_empty_when_user_skips():
-    """ユーザーが承認を拒否した場合、空リストを返すこと。"""
     mock_ui = _make_mock_ui(wait_for_capture_return=False)
 
-    page = _make_search_page()
-    page.url = "https://www.google.com/search?q=test"
+    page = AsyncMock()
+    page.close = AsyncMock()
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate", return_value=page):
+    with patch.object(engine, "_navigate", return_value=page) as mock_navigate:
         results = await engine.search("test", max_results=5)
 
     assert results == []
+    mock_navigate.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -136,19 +136,18 @@ async def test_fetch_calls_approval():
 
 @pytest.mark.asyncio
 async def test_fetch_returns_empty_content_when_user_rejects():
-    """fetch() でユーザーが拒否した場合、空コンテンツを返すこと。"""
     mock_ui = _make_mock_ui(wait_for_capture_return=False)
 
     page = AsyncMock()
-    page.url = "https://example.com/article"
     page.close = AsyncMock()
 
     engine = HumanSearchEngine(control_ui=mock_ui)
-    with patch.object(engine, "_navigate", return_value=page):
+    with patch.object(engine, "_navigate", return_value=page) as mock_navigate:
         result = await engine.fetch("https://example.com/article")
 
     assert result.url == "https://example.com/article"
     assert result.content == ""
+    mock_navigate.assert_called_once()
 
 
 @pytest.mark.asyncio

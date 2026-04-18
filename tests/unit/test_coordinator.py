@@ -262,7 +262,8 @@ async def test_run_returns_research_result(tmp_path):
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
          patch.object(coord._csm, "run", side_effect=_fake_run), \
          patch.object(coord._pm_agent, "run", side_effect=_fake_run), \
-         patch.object(coord._team_builder, "run", side_effect=_fake_run):
+         patch.object(coord._team_builder, "run", side_effect=_fake_run), \
+         patch.object(coord._auditor, "run", side_effect=_fake_run):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
 
         async def fake_specialist_run(self, message, workspace_dir=None, search_port=0):
@@ -311,6 +312,8 @@ async def test_wbs_is_displayed_via_ui(tmp_path):
 
     with patch.object(coord, "_start_search_server", new=AsyncMock()), \
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(coord._csm, "run", side_effect=_fake_run), \
+         patch.object(coord._auditor, "run", side_effect=_fake_run), \
          patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
         await coord.run(ResearchRequest(topic="テストテーマ"))
 
@@ -387,6 +390,8 @@ async def test_checkpoint_created_after_specialist_pass(tmp_path):
 
     with patch.object(coord, "_start_search_server", new=AsyncMock()), \
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(coord._csm, "run", side_effect=fake_agent_run), \
+         patch.object(coord._auditor, "run", side_effect=fake_agent_run), \
          patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
         await coord.run(ResearchRequest(topic="テストテーマ"))
 
@@ -426,6 +431,8 @@ async def test_specialist_drafts_saved_during_pass(tmp_path):
 
     with patch.object(coord, "_start_search_server", new=AsyncMock()), \
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(coord._csm, "run", side_effect=fake_agent_run), \
+         patch.object(coord._auditor, "run", side_effect=fake_agent_run), \
          patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
         await coord.run(ResearchRequest(topic="テストテーマ"), session_id="test_session")
 

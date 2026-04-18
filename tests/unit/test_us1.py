@@ -54,13 +54,12 @@ async def test_run_interactive_shows_confirmation_before_starting(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path), ui=ui)
 
     async def inject():
-        # 1st message: topic
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("Pythonの歴史")
-        # 2nd message: confirmation approval ("yes")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("はい")
-        # 3rd message: decline additional research request
+        await asyncio.sleep(0.05)
+        await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("いいえ")
 
@@ -105,15 +104,16 @@ async def test_run_interactive_waits_for_approval_before_running(tmp_path):
     async def inject():
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("AI技術の動向")
-        # 確認への返答を送る前の時点では _run_research は未呼び出しのはず
         await asyncio.sleep(0.05)
         nonlocal run_research_called
         assert not run_research_called, "_run_research が確認前に呼ばれた"
         await ui._chat_queue.put("はい")
         await asyncio.sleep(0.05)
+        await ui._chat_queue.put("1")
+        await asyncio.sleep(0.05)
         await ui._chat_queue.put("いいえ")
 
-    async def fake_run_research(topic, request, reference_content=""):
+    async def fake_run_research(topic, request, reference_content="", **kwargs):
         nonlocal run_research_called
         run_research_called = True
         return _make_result()
@@ -155,15 +155,15 @@ async def test_run_interactive_reasks_topic_when_user_says_no(tmp_path):
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("最初のテーマ")
         await asyncio.sleep(0.05)
-        await ui._chat_queue.put("いいえ、変更します")  # 拒否
-        await asyncio.sleep(0.05)
         await ui._chat_queue.put("修正後のテーマ")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("はい")
         await asyncio.sleep(0.05)
+        await ui._chat_queue.put("1")
+        await asyncio.sleep(0.05)
         await ui._chat_queue.put("いいえ")
 
-    async def fake_run_research(topic, request, reference_content=""):
+    async def fake_run_research(topic, request, reference_content="", **kwargs):
         nonlocal run_count
         run_count += 1
         return _make_result()
@@ -176,7 +176,6 @@ async def test_run_interactive_reasks_topic_when_user_says_no(tmp_path):
 
     # 1回だけ調査実行（2回目テーマでOK）
     assert run_count == 1
-    # CSMが再度テーマ入力を促した
     csm_texts = [text for sender, text in messages if sender == "CSM"]
     assert any("修正後のテーマ" in t or "テーマ" in t for t in csm_texts), \
         f"再入力促進メッセージが見当たらない: {csm_texts}"
@@ -203,8 +202,11 @@ async def test_research_request_with_reference_file_passes_content_to_task(tmp_p
 
     with patch.object(coord, "_start_search_server", new=AsyncMock()), \
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(coord._csm, "run", side_effect=_fake_run), \
          patch.object(coord._pm_agent, "run", side_effect=_fake_run), \
-         patch.object(coord._team_builder, "run", side_effect=_fake_run):
+         patch.object(coord._team_builder, "run", side_effect=_fake_run), \
+         patch.object(coord._auditor, "run", side_effect=_fake_run), \
+         patch.object(coord, "_evaluate_content", return_value=QualityFeedback(passed=True, score=1.0)):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
         with patch.object(DynamicSpecialistAgent, "run", fake_run):
             result = await coord.run(ResearchRequest(
@@ -244,8 +246,11 @@ async def test_research_request_without_reference_files_works_as_before(tmp_path
 
     with patch.object(coord, "_start_search_server", new=AsyncMock()), \
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
+         patch.object(coord._csm, "run", side_effect=_fake_run), \
          patch.object(coord._pm_agent, "run", side_effect=_fake_run), \
-         patch.object(coord._team_builder, "run", side_effect=_fake_run):
+         patch.object(coord._team_builder, "run", side_effect=_fake_run), \
+         patch.object(coord._auditor, "run", side_effect=_fake_run), \
+         patch.object(coord, "_evaluate_content", return_value=QualityFeedback(passed=True, score=1.0)):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
         with patch.object(DynamicSpecialistAgent, "run", _fake):
             result = await coord.run(ResearchRequest(topic="AIの概要", depth="quick"))
