@@ -10,10 +10,17 @@ _TEMPLATE_PATH = Path(__file__).parent / "templates" / "specialist.md.template"
 
 
 class DynamicSpecialistAgent(BaseResearchAgent):
-    def __init__(self, name: str, expertise: str, system_prompt: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        expertise: str,
+        system_prompt: str,
+        mode: str = "research",
+    ) -> None:
         self._name = name
         self._expertise = expertise
         self._system_prompt = system_prompt
+        self._mode = mode
 
     @property
     def name(self) -> str:
@@ -24,6 +31,8 @@ class DynamicSpecialistAgent(BaseResearchAgent):
         return Path(__file__).parent / "templates"
 
     def _load_system_prompt(self) -> str:
+        if self._mode == "discussion":
+            return self._system_prompt
         template = _TEMPLATE_PATH.read_text(encoding="utf-8")
         return template.format(
             name=self._name,

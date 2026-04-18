@@ -126,6 +126,15 @@ class ControlUI:
         except Exception:
             pass
 
+    async def show_artifact_link(self, label: str, path: str) -> None:
+        if not self._is_alive():
+            return
+        assert self._page
+        try:
+            await self._page.evaluate(f"addArtifactLink({json.dumps(label)}, {json.dumps(path)})")
+        except Exception:
+            pass
+
     async def wait_for_user_message(self) -> str:
         msg = await self._chat_queue.get()
         return msg

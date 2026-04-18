@@ -18,6 +18,7 @@ from research_team.agents.dynamic.factory import DynamicAgentFactory
 from research_team.agents.pm import ProjectManager as PMAgent
 from research_team.agents.team_builder import TeamBuilder
 from research_team.project.manager import ProjectManager as ProjectFileManager
+from research_team.orchestrator.discussion import DiscussionOrchestrator, generate_personas
 from research_team.orchestrator.quality_loop import QualityFeedback, QualityLoop
 from research_team.output.artifact_writer import ArtifactWriter
 from research_team.output.markdown import MarkdownOutput
@@ -282,6 +283,26 @@ class ResearchCoordinator:
         except Exception as exc:
             logger.warning("_push_wbs failed: %s", exc)
 
+    async def _run_discussion(
+        self,
+        specialists: list[dict],
+        topic: str,
+        artifact_writer: "ArtifactWriter | None",
+        run_id: int,
+    ) -> str:
+        personas = generate_personas(specialists)
+        turns = int(os.environ.get("RT_DISCUSSION_TURNS", "2"))
+        orch = DiscussionOrchestrator(stream_fn=self._stream_agent_output, turns=turns)
+        transcript = await orch.run(specialists=specialists, personas=personas, topic=topic)
+        if artifact_writer:
+            try:
+                discussion_path = artifact_writer.write_discussion(run_id=run_id, transcript=transcript)
+                if self._ui and hasattr(self._ui, "show_artifact_link"):
+                    await self._ui.show_artifact_link("対談トランスクリプト", discussion_path)
+            except Exception as exc:
+                logger.warning("write_discussion failed: %s", exc)
+        return transcript
+
     async def _set_agent_status(self, agent_name: str, status: str) -> None:
         if self._ui and hasattr(self._ui, "set_agent_status"):
             try:
@@ -442,6 +463,9 @@ class ResearchCoordinator:
             f"{body}\n\n"
             f"上記の調査データを元に、完成した読み物として整形してください。\n"
             f"【形式指示】{style_instruction}\n"
+            f"【対談セクション保持】本文中に「## スペシャリスト対談」セクションが含まれる場合、"
+            f"そのセクション全体（`> **争点**: ...` や `**名前**: 発言` 形式を含む）を"
+            f"改変・削除せずそのまま出力に含めてください。\n"
             f"【重要】整形済みのMarkdown本文のみを出力してください。"
             f"説明文、前置き、謝罪文、作業説明は一切含めないでください。"
         )
@@ -536,6 +560,18 @@ class ResearchCoordinator:
         )
 
         if request.style in _STYLES_WITHOUT_EXEC_SUMMARY:
+            discussion_specialists = [
+                {"name": name, "expertise": ag._expertise, "research": combined_content[:3000]}
+                for name, ag in factory.agents.items()
+            ]
+            discussion_transcript = await self._run_discussion(
+                specialists=discussion_specialists,
+                topic=topic,
+                artifact_writer=artifact_writer,
+                run_id=run_id,
+            )
+            await self._mark_wbs_done(f"r{run_id}-task-discussion")
+            combined_content = combined_content + "\n\n---\n\n" + discussion_transcript
             format_prompt = self._build_format_prompt(topic, combined_content, request.style)
             formatted = await self._stream_agent_output(self._csm, format_prompt, "CSM")
             if formatted:

@@ -87,6 +87,17 @@ class ArtifactWriter:
         path.write_text("\n".join(lines), encoding="utf-8")
         return str(path)
 
+    def write_discussion(self, run_id: int, transcript: str) -> str:
+        date_str = datetime.now().strftime("%Y%m%d")
+        path = self._dir / f"discussion_run{run_id}_{date_str}.md"
+        lines = [
+            f"# 対談トランスクリプト — Run {run_id} ({date_str})",
+            "",
+            transcript,
+        ]
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return str(path)
+
     def write_specialist_draft(self, run_id: int, specialist_name: str, content: str) -> str:
         """スペシャリスト1名の調査結果を中間MDとして保存する。"""
         date_str = datetime.now().strftime("%Y%m%d")

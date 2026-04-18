@@ -1,5 +1,5 @@
 """
-US-1-3: CSM がテーマと深さをユーザーに確認し、合意を取ってから調査開始する対話フロー
+US-2-6: PMがWBS生成後にユーザー承認フローを実行する（テーマ・深さ・スタイル確認含む）
 US-1-4: 参照ファイル（テキスト）を調査入力として渡せる
 """
 import asyncio
@@ -27,12 +27,11 @@ async def _fake_run(message, workspace_dir=None, search_port=0):
 
 
 # ---------------------------------------------------------------------------
-# US-1-3: 確認フロー
+# US-2-6
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_run_interactive_shows_confirmation_before_starting(tmp_path):
-    """CSMはテーマ入力後、調査開始前に確認メッセージを送る"""
+async def test_run_interactive_no_prerun_topic_confirmation(tmp_path):
     messages: list[tuple[str, str]] = []
 
     class FakeUI:
@@ -61,7 +60,7 @@ async def test_run_interactive_shows_confirmation_before_starting(tmp_path):
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
-        await ui._chat_queue.put("いいえ")
+        await ui._chat_queue.put("終了")
 
     with patch.object(coord, "_run_research", new=AsyncMock(return_value=_make_result())), \
          patch.object(coord, "_start_search_server", new=AsyncMock()), \
@@ -69,7 +68,6 @@ async def test_run_interactive_shows_confirmation_before_starting(tmp_path):
         asyncio.create_task(inject())
         await coord.run_interactive(depth="standard")
 
-    # CSMが確認メッセージを送っているはず
     csm_texts = [text for sender, text in messages if sender == "CSM"]
     confirmation_msg = "\n".join(csm_texts)
     assert "Pythonの歴史" in confirmation_msg, \
@@ -79,8 +77,7 @@ async def test_run_interactive_shows_confirmation_before_starting(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_interactive_waits_for_approval_before_running(tmp_path):
-    """ユーザーが承認するまで _run_research は呼ばれない"""
+async def test_run_interactive_run_research_called_after_theme_input(tmp_path):
     run_research_called = False
 
     class FakeUI:
@@ -105,13 +102,11 @@ async def test_run_interactive_waits_for_approval_before_running(tmp_path):
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("AI技術の動向")
         await asyncio.sleep(0.05)
-        nonlocal run_research_called
-        assert not run_research_called, "_run_research が確認前に呼ばれた"
         await ui._chat_queue.put("はい")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
-        await ui._chat_queue.put("いいえ")
+        await ui._chat_queue.put("終了")
 
     async def fake_run_research(topic, request, reference_content="", **kwargs):
         nonlocal run_research_called
@@ -128,16 +123,14 @@ async def test_run_interactive_waits_for_approval_before_running(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_run_interactive_reasks_topic_when_user_says_no(tmp_path):
-    """ユーザーが拒否したら、CSMが再度テーマを受け付ける"""
-    messages: list[tuple[str, str]] = []
+async def test_run_interactive_continues_loop_after_first_research(tmp_path):
     run_count = 0
 
     class FakeUI:
         _chat_queue: asyncio.Queue = asyncio.Queue()
 
         async def append_agent_message(self, sender, text):
-            messages.append((sender, text))
+            pass
 
         async def append_log(self, status, text):
             pass
@@ -155,13 +148,17 @@ async def test_run_interactive_reasks_topic_when_user_says_no(tmp_path):
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("最初のテーマ")
         await asyncio.sleep(0.05)
-        await ui._chat_queue.put("修正後のテーマ")
+        await ui._chat_queue.put("はい")
+        await asyncio.sleep(0.05)
+        await ui._chat_queue.put("1")
+        await asyncio.sleep(0.05)
+        await ui._chat_queue.put("2番目のテーマ")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("はい")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
-        await ui._chat_queue.put("いいえ")
+        await ui._chat_queue.put("終了")
 
     async def fake_run_research(topic, request, reference_content="", **kwargs):
         nonlocal run_count
@@ -174,11 +171,7 @@ async def test_run_interactive_reasks_topic_when_user_says_no(tmp_path):
         asyncio.create_task(inject())
         await coord.run_interactive(depth="standard")
 
-    # 1回だけ調査実行（2回目テーマでOK）
-    assert run_count == 1
-    csm_texts = [text for sender, text in messages if sender == "CSM"]
-    assert any("修正後のテーマ" in t or "テーマ" in t for t in csm_texts), \
-        f"再入力促進メッセージが見当たらない: {csm_texts}"
+    assert run_count == 2, f"run が {run_count} 回呼ばれた（期待: 2回）"
 
 
 # ---------------------------------------------------------------------------
