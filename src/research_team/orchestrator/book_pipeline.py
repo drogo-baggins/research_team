@@ -100,7 +100,7 @@ class BookChapterPipeline:
             f"【担当節】{section.chapter_title} ＞ {section.section_title}\n\n"
             f"【必ず触れるべき論点】\n{key_points_text}\n\n"
             f"{prev_context}"
-            f"【調査生データ（参照・引用可）】\n{raw_data[:8000]}\n\n"
+            f"【調査生データ（参照・引用可）】\n{raw_data[:20000]}\n\n"
             f"上記をもとに、節「{section.section_title}」を1,500〜3,000字で詳細かつ叙述的に執筆してください。\n"
             f"節見出し（### レベル）から始めてください。説明文・前置きは不要です。"
         )

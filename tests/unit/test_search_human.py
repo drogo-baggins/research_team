@@ -70,7 +70,7 @@ async def test_search_falls_back_to_single_result_when_extractor_finds_nothing()
         results = await engine.search("python asyncio", max_results=5)
 
     assert len(results) == 1
-    assert results[0].url == "https://www.google.com/search?q=python+asyncio"
+    assert "q=python+asyncio" in results[0].url
     assert results[0].source == "human"
     assert "Google search results content" in results[0].content
 
@@ -197,12 +197,24 @@ def test_detect_locale_pure_cjk_prefers_zh_tw_when_no_zh_cn():
     assert _detect_locale("中國武術", ["zh-TW", "en"]) == "zh-TW"
 
 
-def test_detect_locale_pure_cjk_returns_none_when_no_chinese_in_locales():
-    assert _detect_locale("中国武术", ["ja", "en"]) is None
+def test_detect_locale_pure_cjk_returns_first_preferred_when_no_chinese_in_locales():
+    assert _detect_locale("中国武术", ["ja", "en"]) == "ja"
 
 
-def test_detect_locale_latin_returns_none():
-    assert _detect_locale("english query", ["ja", "en"]) is None
+def test_detect_locale_latin_returns_first_preferred():
+    assert _detect_locale("english query", ["ja", "en"]) == "ja"
+
+
+def test_detect_locale_latin_returns_zh_cn_when_preferred():
+    assert _detect_locale("english query", ["zh-CN"]) == "zh-CN"
+
+
+def test_detect_locale_hiragana_returns_first_preferred_when_not_in_locales():
+    assert _detect_locale("日本語のクエリ", ["zh-CN"]) == "zh-CN"
+
+
+def test_detect_locale_returns_none_when_no_preferred():
+    assert _detect_locale("english query", []) is None
 
 
 def test_set_preferred_locales_updates_engine():
@@ -219,3 +231,87 @@ def test_preferred_locales_default():
 def test_preferred_locales_constructor():
     engine = HumanSearchEngine(preferred_locales=["fr", "de"])
     assert engine._preferred_locales == ["fr", "de"]
+
+
+from research_team.search.human import _QueryTranslator, _LOCALE_LANGUAGE_NAMES, _extract_json_object
+
+
+def test_locale_language_names_covers_all_locale_params():
+    from research_team.search.human import _LOCALE_PARAMS
+    for locale in _LOCALE_PARAMS:
+        assert locale in _LOCALE_LANGUAGE_NAMES, f"Missing language name for locale: {locale}"
+
+
+def test_extract_json_object_plain():
+    assert _extract_json_object('{"translated": "hello"}') == {"translated": "hello"}
+
+
+def test_extract_json_object_with_code_fence():
+    raw = '```json\n{"translated": "八卦掌的历史"}\n```'
+    assert _extract_json_object(raw) == {"translated": "八卦掌的历史"}
+
+
+def test_extract_json_object_with_prefix_text():
+    raw = 'Here is the translation:\n{"translated": "结果"}'
+    assert _extract_json_object(raw) == {"translated": "结果"}
+
+
+def test_extract_json_object_echo_plus_code_fence():
+    raw = '{"query": "化勁 バイオメカニクス", "target_language": "Simplified Chinese"}```json\n{"translated": "化劲 生物力学"}\n```'
+    assert _extract_json_object(raw) == {"translated": "化劲 生物力学"}
+
+
+@pytest.mark.asyncio
+async def test_query_translator_returns_translated_text():
+    translator = _QueryTranslator()
+    mock_client = MagicMock()
+    mock_client.start = AsyncMock()
+    mock_client.stop = AsyncMock()
+
+    async def mock_prompt(message):
+        yield MagicMock(
+            type="message_update",
+            data={"assistantMessageEvent": {"type": "text_delta", "delta": '{"translated": "八卦掌 化劲 借力 实战机制"}'}},
+        )
+        yield MagicMock(type="agent_end", data={})
+
+    mock_client.prompt = mock_prompt
+
+    with patch("research_team.search.human.PiAgentClient", return_value=mock_client):
+        result = await translator.translate("八卦掌 化勁 借力 実践メカニズム", "zh-CN")
+
+    assert result == "八卦掌 化劲 借力 实战机制"
+    await translator.close()
+
+
+@pytest.mark.asyncio
+async def test_query_translator_falls_back_on_error():
+    translator = _QueryTranslator()
+    mock_client = MagicMock()
+    mock_client.start = AsyncMock()
+    mock_client.stop = AsyncMock()
+
+    async def mock_prompt_raises(message):
+        raise RuntimeError("pi-agent error")
+        if False:
+            yield
+
+    mock_client.prompt = mock_prompt_raises
+
+    with patch("research_team.search.human.PiAgentClient", return_value=mock_client):
+        result = await translator.translate("original query", "zh-CN")
+
+    assert result == "original query"
+    await translator.close()
+
+
+@pytest.mark.asyncio
+async def test_query_translator_unknown_locale_returns_original():
+    translator = _QueryTranslator()
+    result = await translator.translate("some query", "xx-UNKNOWN")
+    assert result == "some query"
+
+
+def test_human_engine_has_translator_field():
+    engine = HumanSearchEngine()
+    assert engine._translator is None

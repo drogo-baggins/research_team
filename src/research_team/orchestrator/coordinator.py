@@ -588,7 +588,7 @@ class ResearchCoordinator:
 
         if request.style == "book_chapter":
             from research_team.orchestrator.book_pipeline import BookChapterPipeline
-            outline = await self._decompose_book_sections(topic, combined_content)
+            outline = await self._decompose_book_sections(topic, combined_content, request.depth)
             if outline and outline.all_sections():
                 await self._notify("CSM", f"📚 セクション構造を設計しました（{len(outline.all_sections())}節）")
                 pipeline = BookChapterPipeline(
@@ -743,14 +743,33 @@ class ResearchCoordinator:
         self,
         topic: str,
         raw_content: str,
+        depth: str = "standard",
     ) -> "BookOutline | None":
         """PMにセクション分解を依頼し、BookOutlineを返す。失敗時はNone。"""
         from research_team.orchestrator.book_pipeline import parse_outline_from_pm_output
+        chapter_count = {"quick": 2, "standard": 3, "deep": 5}.get(depth, 3)
         prompt = (
-            f"テーマ「{topic}」の書籍チャプターを執筆します。\n"
-            f"以下の調査データをもとに、章・節構造をJSON形式で設計してください。\n\n"
-            f"【調査データ（抜粋）】\n{raw_content[:5000]}\n\n"
-            f"SKILL.mdに記載のJSON形式で出力してください。"
+            f"テーマ「{topic}」の書籍を執筆します。\n"
+            f"以下の調査データをもとに、{chapter_count}章構成で章・節構造を設計してください。\n"
+            f"各章には3〜5節を設けてください。\n\n"
+            f"【調査データ】\n{raw_content[:20000]}\n\n"
+            f"必ず以下のJSON形式のみを出力してください。説明文・前置きは一切含めないでください。\n"
+            f"```json\n"
+            f"[\n"
+            f"  {{\n"
+            f"    \"chapter_index\": 1,\n"
+            f"    \"chapter_title\": \"第1章 タイトル\",\n"
+            f"    \"sections\": [\n"
+            f"      {{\n"
+            f"        \"section_index\": 1,\n"
+            f"        \"section_title\": \"1-1 節タイトル\",\n"
+            f"        \"key_points\": [\"論点A\", \"論点B\", \"論点C\"],\n"
+            f"        \"specialist_hint\": \"この節に最適な専門分野\"\n"
+            f"      }}\n"
+            f"    ]\n"
+            f"  }}\n"
+            f"]\n"
+            f"```"
         )
         raw = await self._stream_agent_output(self._pm_agent, prompt, "PM (セクション分解)")
         return parse_outline_from_pm_output(raw)

@@ -88,6 +88,13 @@ def test_build_locales_instruction_known_locales():
     assert "Simplified Chinese" in result
 
 
+def test_build_locales_instruction_single_locale_is_exclusive():
+    result = _build_locales_instruction(["zh-CN"])
+    assert "Simplified Chinese" in result
+    assert "ALL" in result
+    assert "only" in result
+
+
 def test_build_locales_instruction_empty_returns_any_language():
     result = _build_locales_instruction([])
     assert "any language" in result

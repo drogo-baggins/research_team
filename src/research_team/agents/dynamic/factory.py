@@ -22,7 +22,18 @@ def _build_locales_instruction(locales: list[str]) -> str:
     labels = [_LOCALE_LABELS.get(loc, loc) for loc in locales]
     if not labels:
         return "Search in any language relevant to the topic."
-    return f"Search in: {', '.join(labels)}. Generate at least one query per selected language where the topic has relevant sources in that language."
+    if len(labels) == 1:
+        lang = labels[0]
+        return (
+            f"ALL search queries MUST be written in {lang} only. "
+            f"Do NOT use any other language, script, or transliteration (e.g. no Japanese katakana, no English) in queries. "
+            f"Use native {lang} terminology and phrasing exclusively."
+        )
+    lang_list = ", ".join(labels)
+    return (
+        f"Generate queries in: {lang_list}. "
+        f"Write each query entirely in its respective language — do not mix scripts or transliterate into other languages."
+    )
 
 
 class DynamicSpecialistAgent(BaseResearchAgent):
