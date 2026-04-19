@@ -1,5 +1,11 @@
 from __future__ import annotations
+import json
+import re
+import logging
+from typing import Any, Callable, Awaitable
 from pydantic import BaseModel, Field, computed_field
+
+logger = logging.getLogger(__name__)
 
 
 class BookSection(BaseModel):
@@ -34,3 +40,24 @@ class BookOutline(BaseModel):
                     specialist_hint=sec.get("specialist_hint", ""),
                 ))
         return result
+
+
+def parse_outline_from_pm_output(raw: str) -> "BookOutline | None":
+    """PMの出力テキストから ```json``` ブロックを抽出してBookOutlineを返す。失敗時はNone。"""
+    match = re.search(r"```json\s*(.*?)\s*```", raw, re.DOTALL)
+    if not match:
+        match = re.search(r"(\[.*\])", raw, re.DOTALL)
+    if not match:
+        logger.warning("parse_outline_from_pm_output: no JSON block found")
+        return None
+    try:
+        data = json.loads(match.group(1))
+        if not isinstance(data, list):
+            return None
+        for ch in data:
+            if "chapter_index" not in ch or "chapter_title" not in ch or "sections" not in ch:
+                return None
+        return BookOutline(chapters=data)
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning("parse_outline_from_pm_output: JSON parse failed: %s", exc)
+        return None
