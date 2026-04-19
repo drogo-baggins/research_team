@@ -164,3 +164,58 @@ async def test_no_approval_needed_without_ui():
         result = await engine.fetch("https://example.com/article")
 
     assert result.content == "body text"
+
+
+from research_team.search.human import _detect_locale
+
+
+def test_detect_locale_hiragana_returns_ja():
+    assert _detect_locale("日本語のクエリ", ["ja", "en"]) == "ja"
+
+
+def test_detect_locale_katakana_returns_ja():
+    assert _detect_locale("テスト検索", ["ja", "en"]) == "ja"
+
+
+def test_detect_locale_hangul_returns_ko():
+    assert _detect_locale("한국어 검색", ["ja", "ko"]) == "ko"
+
+
+def test_detect_locale_arabic_returns_ar():
+    assert _detect_locale("بحث عربي", ["ar", "en"]) == "ar"
+
+
+def test_detect_locale_cyrillic_returns_ru():
+    assert _detect_locale("поиск на русском", ["ru", "en"]) == "ru"
+
+
+def test_detect_locale_pure_cjk_prefers_zh_cn():
+    assert _detect_locale("中国武术", ["zh-CN", "en"]) == "zh-CN"
+
+
+def test_detect_locale_pure_cjk_prefers_zh_tw_when_no_zh_cn():
+    assert _detect_locale("中國武術", ["zh-TW", "en"]) == "zh-TW"
+
+
+def test_detect_locale_pure_cjk_returns_none_when_no_chinese_in_locales():
+    assert _detect_locale("中国武术", ["ja", "en"]) is None
+
+
+def test_detect_locale_latin_returns_none():
+    assert _detect_locale("english query", ["ja", "en"]) is None
+
+
+def test_set_preferred_locales_updates_engine():
+    engine = HumanSearchEngine()
+    engine.set_preferred_locales(["zh-CN", "ko"])
+    assert engine._preferred_locales == ["zh-CN", "ko"]
+
+
+def test_preferred_locales_default():
+    engine = HumanSearchEngine()
+    assert engine._preferred_locales == ["ja", "en"]
+
+
+def test_preferred_locales_constructor():
+    engine = HumanSearchEngine(preferred_locales=["fr", "de"])
+    assert engine._preferred_locales == ["fr", "de"]

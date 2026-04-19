@@ -1,10 +1,61 @@
 import asyncio
 import logging
+from urllib.parse import urlencode
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext, Error as PlaywrightError
 from research_team.search.base import SearchEngine, SearchResult
 from research_team.search.google_extractor import GoogleSearchExtractor
 
 logger = logging.getLogger(__name__)
+
+_LOCALE_PARAMS: dict[str, dict[str, str]] = {
+    "ja":    {"hl": "ja",    "gl": "jp"},
+    "ko":    {"hl": "ko",    "gl": "kr"},
+    "zh-CN": {"hl": "zh-CN", "gl": "cn"},
+    "zh-TW": {"hl": "zh-TW", "gl": "tw"},
+    "ar":    {"hl": "ar"},
+    "ru":    {"hl": "ru",    "gl": "ru"},
+    "fr":    {"hl": "fr",    "gl": "fr"},
+    "de":    {"hl": "de",    "gl": "de"},
+    "es":    {"hl": "es",    "gl": "es"},
+    "pt":    {"hl": "pt",    "gl": "br"},
+    "hi":    {"hl": "hi",    "gl": "in"},
+    "th":    {"hl": "th",    "gl": "th"},
+    "vi":    {"hl": "vi",    "gl": "vn"},
+    "id":    {"hl": "id",    "gl": "id"},
+    "it":    {"hl": "it",    "gl": "it"},
+    "nl":    {"hl": "nl",    "gl": "nl"},
+    "pl":    {"hl": "pl",    "gl": "pl"},
+    "tr":    {"hl": "tr",    "gl": "tr"},
+}
+
+_SCRIPT_LOCALE: list[tuple[tuple[int, int], str]] = [
+    ((0x3040, 0x309F), "ja"),
+    ((0x30A0, 0x30FF), "ja"),
+    ((0xAC00, 0xD7A3), "ko"),
+    ((0x1100, 0x11FF), "ko"),
+    ((0x0600, 0x06FF), "ar"),
+    ((0x0400, 0x04FF), "ru"),
+    ((0x0900, 0x097F), "hi"),
+    ((0x0E00, 0x0E7F), "th"),
+    ((0x1E00, 0x1EFF), "vi"),
+]
+
+
+def _detect_locale(query: str, preferred_locales: list[str]) -> str | None:
+    for (lo, hi), locale in _SCRIPT_LOCALE:
+        if any(lo <= ord(c) <= hi for c in query):
+            if locale in preferred_locales:
+                return locale
+            return locale
+
+    has_cjk = any(0x4E00 <= ord(c) <= 0x9FFF for c in query)
+    if has_cjk:
+        for candidate in ("zh-CN", "zh-TW"):
+            if candidate in preferred_locales:
+                return candidate
+        return None
+
+    return None
 
 
 class HumanSearchEngine(SearchEngine):
@@ -12,16 +63,21 @@ class HumanSearchEngine(SearchEngine):
 
     def __init__(
         self,
-        search_engine_url: str = "https://www.google.com/search?q=",
+        search_engine_url: str = "https://www.google.com/search",
         browser: Browser | None = None,
         control_ui=None,
+        preferred_locales: list[str] | None = None,
     ):
-        self._search_engine_url = search_engine_url
+        self._search_engine_url = search_engine_url.rstrip("?").rstrip("?q=")
         self._browser = browser
         self._control_ui = control_ui
+        self._preferred_locales: list[str] = preferred_locales if preferred_locales is not None else ["ja", "en"]
         self._playwright = None
         self._context: BrowserContext | None = None
         self._lock = asyncio.Lock()
+
+    def set_preferred_locales(self, locales: list[str]) -> None:
+        self._preferred_locales = locales
 
     async def _get_context(self) -> BrowserContext:
         if self._context is None:
@@ -84,7 +140,11 @@ class HumanSearchEngine(SearchEngine):
             logger.info("HumanSearchEngine.search: UI closed, skipping query: %s", query)
             return []
         async with self._lock:
-            search_url = f"{self._search_engine_url}{query.replace(' ', '+')}"
+            params: dict[str, str] = {"q": query}
+            locale = _detect_locale(query, self._preferred_locales)
+            if locale and locale in _LOCALE_PARAMS:
+                params.update(_LOCALE_PARAMS[locale])
+            search_url = f"{self._search_engine_url}?{urlencode(params)}"
 
             logger.debug("HumanSearchEngine.search: navigating to %s", search_url)
             try:
