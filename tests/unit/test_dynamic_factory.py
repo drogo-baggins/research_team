@@ -76,3 +76,46 @@ def test_factory_slot_freed_after_remove_allows_new_agent():
     factory.remove_specialist("expert_0")
     agent = factory.create_specialist("new_expert", "new_field", "You are new.")
     assert agent.name == "new_expert"
+
+
+from research_team.agents.dynamic.factory import _build_locales_instruction
+
+
+def test_build_locales_instruction_known_locales():
+    result = _build_locales_instruction(["ja", "en", "zh-CN"])
+    assert "Japanese" in result
+    assert "English" in result
+    assert "Simplified Chinese" in result
+
+
+def test_build_locales_instruction_empty_returns_any_language():
+    result = _build_locales_instruction([])
+    assert "any language" in result
+
+
+def test_build_locales_instruction_unknown_locale_uses_code():
+    result = _build_locales_instruction(["xx"])
+    assert "xx" in result
+
+
+def test_dynamic_specialist_locales_default():
+    agent = DynamicSpecialistAgent("Alice", "biology", "You study cells.")
+    assert agent._locales == ["ja", "en"]
+
+
+def test_dynamic_specialist_locales_custom():
+    agent = DynamicSpecialistAgent("Bob", "physics", "You study particles.", locales=["zh-CN", "ko"])
+    assert agent._locales == ["zh-CN", "ko"]
+
+
+def test_dynamic_specialist_system_prompt_contains_locales_instruction():
+    agent = DynamicSpecialistAgent("Carol", "history", "You study history.", locales=["fr", "de"])
+    prompt = agent._load_system_prompt()
+    assert "French" in prompt
+    assert "German" in prompt
+
+
+def test_factory_create_specialist_with_locales():
+    factory = DynamicAgentFactory()
+    agent = factory.create_specialist("Dr. Lin", "chemistry", "You study reactions.", locales=["zh-CN"])
+    assert agent._locales == ["zh-CN"]

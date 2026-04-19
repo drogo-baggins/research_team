@@ -8,6 +8,22 @@ MAX_AGENTS = 5
 
 _TEMPLATE_PATH = Path(__file__).parent / "templates" / "specialist.md.template"
 
+_LOCALE_LABELS: dict[str, str] = {
+    "ja": "Japanese", "en": "English", "zh-CN": "Simplified Chinese",
+    "zh-TW": "Traditional Chinese", "ko": "Korean", "fr": "French",
+    "de": "German", "es": "Spanish", "pt": "Portuguese", "ar": "Arabic",
+    "ru": "Russian", "hi": "Hindi", "th": "Thai", "vi": "Vietnamese",
+    "id": "Indonesian", "it": "Italian", "nl": "Dutch", "pl": "Polish",
+    "tr": "Turkish",
+}
+
+
+def _build_locales_instruction(locales: list[str]) -> str:
+    labels = [_LOCALE_LABELS.get(loc, loc) for loc in locales]
+    if not labels:
+        return "Search in any language relevant to the topic."
+    return f"Search in: {', '.join(labels)}. Generate at least one query per selected language where the topic has relevant sources in that language."
+
 
 class DynamicSpecialistAgent(BaseResearchAgent):
     def __init__(
@@ -16,11 +32,13 @@ class DynamicSpecialistAgent(BaseResearchAgent):
         expertise: str,
         system_prompt: str,
         mode: str = "research",
+        locales: list[str] | None = None,
     ) -> None:
         self._name = name
         self._expertise = expertise
         self._system_prompt = system_prompt
         self._mode = mode
+        self._locales: list[str] = locales if locales is not None else ["ja", "en"]
 
     @property
     def name(self) -> str:
@@ -38,6 +56,7 @@ class DynamicSpecialistAgent(BaseResearchAgent):
             name=self._name,
             expertise=self._expertise,
             system_prompt=self._system_prompt,
+            locales_instruction=_build_locales_instruction(self._locales),
         )
 
     def create_client(
@@ -74,7 +93,7 @@ class DynamicAgentFactory:
         return dict(self._agents)
 
     def create_specialist(
-        self, name: str, expertise: str, system_prompt: str
+        self, name: str, expertise: str, system_prompt: str, locales: list[str] | None = None
     ) -> DynamicSpecialistAgent:
         """Create a new specialist agent.
 
@@ -88,7 +107,7 @@ class DynamicAgentFactory:
                 f"Cannot create agent '{name}': maximum of {MAX_AGENTS} agents reached"
             )
         agent = DynamicSpecialistAgent(
-            name=name, expertise=expertise, system_prompt=system_prompt
+            name=name, expertise=expertise, system_prompt=system_prompt, locales=locales
         )
         self._agents[name] = agent
         return agent
