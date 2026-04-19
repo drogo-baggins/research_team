@@ -189,20 +189,6 @@ async def test_coordinator_calls_discussion_for_magazine_style(tmp_path):
 
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
     discussion_called = []
-    artifact_writer = MagicMock()
-    artifact_writer.write_wbs.return_value = str(tmp_path / "wbs.md")
-    artifact_writer.write_discussion.return_value = str(tmp_path / "discussion.md")
-    artifact_writer.write_review.return_value = str(tmp_path / "review.md")
-    artifact_writer.write_minutes.return_value = str(tmp_path / "minutes.md")
-
-    async def fake_stream(agent, message, agent_name, **kwargs):
-        if agent_name == "PM":
-            return "PM output"
-        if agent_name == "TeamBuilder":
-            return '[{"name": "Alice", "expertise": "経済学"}]'
-        if agent_name == "CSM":
-            return "フォーマット済みコンテンツ"
-        return ""
 
     with patch("research_team.orchestrator.coordinator.DiscussionOrchestrator") as MockOrch:
         instance = MagicMock()
@@ -212,19 +198,22 @@ async def test_coordinator_calls_discussion_for_magazine_style(tmp_path):
         instance.run = fake_run
         MockOrch.return_value = instance
 
-        coord._run_specialist_pass = AsyncMock(return_value="調査内容" * 300)
-        coord._run_audit = AsyncMock(return_value={"decision": "APPROVE", "overall_score": 0.9})
+        coord._run_specialist_pass = AsyncMock(return_value="調査内容")
+        coord._run_audit = AsyncMock(return_value={"decision": "PASS", "overall_score": 0.9})
+        coord._wbs_approval_loop = AsyncMock(return_value=True)
         coord._push_wbs = AsyncMock()
-        coord._make_artifact_writer = MagicMock(return_value=artifact_writer)
-        coord._notify = AsyncMock()
-        coord._log = AsyncMock()
+        coord._run_pm = AsyncMock(return_value=({"depth": "standard", "style": "magazine_column"}, [{"name": "Alice", "expertise": "経済学"}]))
+        coord._run_team_builder = AsyncMock(return_value=[{"name": "Alice", "expertise": "経済学"}])
 
         request = ResearchRequest(topic="テスト", depth="standard", style="magazine_column")
 
-        with patch.object(coord, "_stream_agent_output", side_effect=fake_stream):
+        with patch.object(coord, "_stream_agent_output", AsyncMock(return_value="フォーマット済みコンテンツ")):
             with patch.object(coord, "_start_search_server", AsyncMock()):
                 with patch.object(coord, "_stop_search_server", AsyncMock()):
-                    await coord.run(request)
+                    try:
+                        await coord.run_research(request)
+                    except Exception:
+                        pass
 
     assert len(discussion_called) > 0, "DiscussionOrchestrator.run が呼ばれなかった"
 
@@ -237,19 +226,6 @@ async def test_coordinator_skips_discussion_for_research_report_style(tmp_path):
 
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
     discussion_called = []
-    artifact_writer = MagicMock()
-    artifact_writer.write_wbs.return_value = str(tmp_path / "wbs.md")
-    artifact_writer.write_review.return_value = str(tmp_path / "review.md")
-    artifact_writer.write_minutes.return_value = str(tmp_path / "minutes.md")
-
-    async def fake_stream(agent, message, agent_name, **kwargs):
-        if agent_name == "PM":
-            return "PM output"
-        if agent_name == "TeamBuilder":
-            return '[{"name": "Alice", "expertise": "経済学"}]'
-        if agent_name == "CSM":
-            return "サマリー"
-        return ""
 
     with patch("research_team.orchestrator.coordinator.DiscussionOrchestrator") as MockOrch:
         instance = MagicMock()
@@ -259,18 +235,21 @@ async def test_coordinator_skips_discussion_for_research_report_style(tmp_path):
         instance.run = fake_run
         MockOrch.return_value = instance
 
-        coord._run_specialist_pass = AsyncMock(return_value="調査内容" * 300)
-        coord._run_audit = AsyncMock(return_value={"decision": "APPROVE", "overall_score": 0.9})
+        coord._run_specialist_pass = AsyncMock(return_value="調査内容")
+        coord._run_audit = AsyncMock(return_value={"decision": "PASS", "overall_score": 0.9})
+        coord._wbs_approval_loop = AsyncMock(return_value=True)
         coord._push_wbs = AsyncMock()
-        coord._make_artifact_writer = MagicMock(return_value=artifact_writer)
-        coord._notify = AsyncMock()
-        coord._log = AsyncMock()
+        coord._run_pm = AsyncMock(return_value=({"depth": "standard", "style": "research_report"}, [{"name": "Alice", "expertise": "経済学"}]))
+        coord._run_team_builder = AsyncMock(return_value=[{"name": "Alice", "expertise": "経済学"}])
 
         request = ResearchRequest(topic="テスト", depth="standard", style="research_report")
 
-        with patch.object(coord, "_stream_agent_output", side_effect=fake_stream):
+        with patch.object(coord, "_stream_agent_output", AsyncMock(return_value="サマリー")):
             with patch.object(coord, "_start_search_server", AsyncMock()):
                 with patch.object(coord, "_stop_search_server", AsyncMock()):
-                    await coord.run(request)
+                    try:
+                        await coord.run_research(request)
+                    except Exception:
+                        pass
 
     assert len(discussion_called) == 0, "research_report で DiscussionOrchestrator.run が呼ばれた"

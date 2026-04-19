@@ -56,10 +56,6 @@ async def test_run_interactive_no_prerun_topic_confirmation(tmp_path):
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("Pythonの歴史")
         await asyncio.sleep(0.05)
-        await ui._chat_queue.put("はい")
-        await asyncio.sleep(0.05)
-        await ui._chat_queue.put("1")
-        await asyncio.sleep(0.05)
         await ui._chat_queue.put("終了")
 
     with patch.object(coord, "_run_research", new=AsyncMock(return_value=_make_result())), \
@@ -69,11 +65,8 @@ async def test_run_interactive_no_prerun_topic_confirmation(tmp_path):
         await coord.run_interactive(depth="standard")
 
     csm_texts = [text for sender, text in messages if sender == "CSM"]
-    confirmation_msg = "\n".join(csm_texts)
-    assert "Pythonの歴史" in confirmation_msg, \
-        f"確認メッセージにテーマが含まれていない: {confirmation_msg}"
-    assert "standard" in confirmation_msg or "標準" in confirmation_msg, \
-        f"確認メッセージに深さが含まれていない: {confirmation_msg}"
+    assert not any("上記の内容で調査を開始してよろしいでしょうか" in t for t in csm_texts), \
+        f"旧フローの確認メッセージが表示されている: {csm_texts}"
 
 
 @pytest.mark.asyncio
@@ -101,10 +94,6 @@ async def test_run_interactive_run_research_called_after_theme_input(tmp_path):
     async def inject():
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("AI技術の動向")
-        await asyncio.sleep(0.05)
-        await ui._chat_queue.put("はい")
-        await asyncio.sleep(0.05)
-        await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("終了")
 
@@ -148,15 +137,7 @@ async def test_run_interactive_continues_loop_after_first_research(tmp_path):
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("最初のテーマ")
         await asyncio.sleep(0.05)
-        await ui._chat_queue.put("はい")
-        await asyncio.sleep(0.05)
-        await ui._chat_queue.put("1")
-        await asyncio.sleep(0.05)
         await ui._chat_queue.put("2番目のテーマ")
-        await asyncio.sleep(0.05)
-        await ui._chat_queue.put("はい")
-        await asyncio.sleep(0.05)
-        await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("終了")
 
