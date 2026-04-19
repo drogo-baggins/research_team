@@ -20,6 +20,8 @@ class ControlUI:
         self._approval_result: bool = False
         self._pending_approval_url: str | None = None
         self._closed_event: asyncio.Event = asyncio.Event()
+        self._wbs_approval_event: asyncio.Event = asyncio.Event()
+        self._wbs_approval_result: dict | None = None
 
     @property
     def closed(self) -> bool:
@@ -45,6 +47,7 @@ class ControlUI:
     def _on_page_close(self, page: Page) -> None:
         self._closed_event.set()
         self._approval_event.set()
+        self._wbs_approval_event.set()
         self._chat_queue.put_nowait("")
 
     async def _on_page_load(self, page: Page) -> None:
@@ -65,6 +68,27 @@ class ControlUI:
             case "approval_done":
                 self._approval_result = payload.get("approved", False)
                 self._approval_event.set()
+            case "wbs_approval":
+                approved = payload.get("approved", False)
+                if not approved and not payload.get("feedback"):
+                    self._wbs_approval_result = None
+                else:
+                    self._wbs_approval_result = {
+                        "approved": approved,
+                        "depth": payload.get("depth", "standard"),
+                        "style": payload.get("style", "research_report"),
+                        "locales": payload.get("locales", ["ja", "en"]),
+                    }
+                self._wbs_approval_event.set()
+            case "wbs_feedback":
+                self._wbs_approval_result = {
+                    "approved": False,
+                    "feedback": payload.get("text", ""),
+                    "depth": payload.get("depth", "standard"),
+                    "style": payload.get("style", "research_report"),
+                    "locales": payload.get("locales", ["ja", "en"]),
+                }
+                self._wbs_approval_event.set()
 
     async def append_agent_message(self, sender: str, text: str) -> None:
         if not self._is_alive():
@@ -126,18 +150,25 @@ class ControlUI:
         except Exception:
             pass
 
-    async def show_artifact_link(self, label: str, path: str) -> None:
-        if not self._is_alive():
-            return
-        assert self._page
-        try:
-            await self._page.evaluate(f"addArtifactLink({json.dumps(label)}, {json.dumps(path)})")
-        except Exception:
-            pass
-
     async def wait_for_user_message(self) -> str:
         msg = await self._chat_queue.get()
         return msg
+
+    async def show_wbs_approval(self, depth: str, style: str, locales: list[str] | None = None) -> dict | None:
+        self._wbs_approval_event.clear()
+        self._wbs_approval_result = None
+        if self._is_alive():
+            assert self._page
+            try:
+                await self._page.evaluate(
+                    f"showWbsApproval({json.dumps(depth)}, {json.dumps(style)}, {json.dumps(locales or ['ja', 'en'])})"
+                )
+            except Exception:
+                self._wbs_approval_event.set()
+        else:
+            self._wbs_approval_event.set()
+        await self._wbs_approval_event.wait()
+        return self._wbs_approval_result
 
     async def wait_for_capture(self, url: str) -> bool:
         logger.warning("wait_for_capture CALLED: url=%s", url)
@@ -160,6 +191,17 @@ class ControlUI:
         self._pending_approval_url = None
         logger.warning("wait_for_capture: event fired, result=%s", self._approval_result)
         return self._approval_result
+
+    async def show_artifact_link(self, label: str, path: str) -> None:
+        if not self._is_alive():
+            return
+        assert self._page
+        try:
+            await self._page.evaluate(
+                f"addArtifactLink({json.dumps(label)}, {json.dumps(path)})"
+            )
+        except Exception:
+            pass
 
     async def close(self) -> None:
         if self._context:
