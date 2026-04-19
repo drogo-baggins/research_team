@@ -35,6 +35,7 @@ class ResearchRequest:
     output_format: str = "markdown"
     reference_files: list[str] = field(default_factory=list)
     style: str = "research_report"
+    locales: list[str] = field(default_factory=lambda: ["ja", "en"])
 
 
 @dataclass
@@ -526,6 +527,7 @@ class ResearchCoordinator:
                 name=spec["name"],
                 expertise=spec["expertise"],
                 system_prompt=f"あなたは{spec['expertise']}の専門家です。{topic}について調査します。",
+                locales=request.locales,
             )
 
         await self._push_wbs(topic, specialists, run_id=run_id, style=request.style)
@@ -815,6 +817,7 @@ class ResearchCoordinator:
             result = await self._ui.show_wbs_approval(
                 depth=request.depth,
                 style=request.style,
+                locales=request.locales,
             )
 
             if result is None:
@@ -823,6 +826,9 @@ class ResearchCoordinator:
             if result.get("approved"):
                 request.depth = result["depth"]
                 request.style = result["style"]
+                request.locales = result.get("locales", request.locales)
+                if hasattr(self._search_engine, "set_preferred_locales"):
+                    self._search_engine.set_preferred_locales(request.locales)
                 return True
 
             feedback_text = result.get("feedback", "")

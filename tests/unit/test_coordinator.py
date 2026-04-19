@@ -56,6 +56,16 @@ def test_build_research_task_with_agent_instructions():
     assert "より深く調査して" in task
 
 
+def test_research_request_locales_default():
+    request = ResearchRequest(topic="AI倫理", depth=3, output_format="report")
+    assert request.locales == ["ja", "en"]
+
+
+def test_research_request_locales_custom():
+    request = ResearchRequest(topic="AI倫理", depth=3, output_format="report", locales=["zh-CN", "ko"])
+    assert request.locales == ["zh-CN", "ko"]
+
+
 def test_parse_team_spec_valid_json():
     coord = ResearchCoordinator.__new__(ResearchCoordinator)
     raw = '[{"name": "経済専門家", "expertise": "経済学"}, {"name": "技術者", "expertise": "IT"}]'
