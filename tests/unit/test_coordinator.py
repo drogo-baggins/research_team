@@ -463,6 +463,24 @@ def test_is_negative_does_not_match_affirmative():
     assert _is_negative("追加調査してほしい") is False
 
 
+def test_evaluate_content_book_chapter_deep_threshold():
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    short_content = "x" * 14999
+    result = coord._evaluate_content(short_content, "deep", style="book_chapter")
+    assert result.passed is False
+
+    long_content = "x" * 15000
+    result = coord._evaluate_content(long_content, "deep", style="book_chapter")
+    assert result.passed is True
+
+
+def test_evaluate_content_default_unchanged():
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    content_2000 = "x" * 2000
+    result = coord._evaluate_content(content_2000, "deep")
+    assert result.passed is True
+
+
 def test_summary_prompt_uses_full_content_when_no_env(monkeypatch, tmp_path):
     """RT_MAX_SUMMARY_CHARS 未設定なら combined_content 全文が summary_prompt に含まれる。"""
     monkeypatch.delenv("RT_MAX_SUMMARY_CHARS", raising=False)
@@ -500,11 +518,7 @@ async def test_run_interactive_additional_request_loop(tmp_path):
 
     user_inputs = [
         "テストテーマA",
-        "はい",
-        "1",
         "別のテーマ追加",
-        "はい",
-        "1",
         "終了",
     ]
     input_iter = iter(user_inputs)

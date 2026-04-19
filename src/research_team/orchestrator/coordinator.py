@@ -18,8 +18,8 @@ from research_team.agents.dynamic.factory import DynamicAgentFactory
 from research_team.agents.pm import ProjectManager as PMAgent
 from research_team.agents.team_builder import TeamBuilder
 from research_team.project.manager import ProjectManager as ProjectFileManager
-from research_team.orchestrator.discussion import DiscussionOrchestrator, generate_personas
 from research_team.orchestrator.quality_loop import QualityFeedback, QualityLoop
+from research_team.orchestrator.discussion import DiscussionOrchestrator, generate_personas
 from research_team.output.artifact_writer import ArtifactWriter
 from research_team.output.markdown import MarkdownOutput
 from research_team.pi_bridge.search_server import SearchServer
@@ -183,6 +183,10 @@ _STYLE_INSTRUCTIONS: dict[str, str] = {
 _STYLES_WITHOUT_EXEC_SUMMARY = {"book_chapter", "magazine_column"}
 
 
+class ResearchCancelledError(Exception):
+    pass
+
+
 class ResearchCoordinator:
     def __init__(self, workspace_dir: str | None = None, ui=None):
         self._workspace_dir = workspace_dir or os.path.join(os.getcwd(), "workspace")
@@ -244,9 +248,20 @@ class ResearchCoordinator:
             except Exception as exc:
                 logger.warning("update_wbs_task failed (id=%s): %s", task_id, exc)
 
-    async def _push_wbs(self, topic: str, specialists: list[dict], run_id: int = 0) -> None:
+    async def _push_wbs(self, topic: str, specialists: list[dict], run_id: int = 0, style: str = "") -> None:
         if not self._ui or not hasattr(self._ui, "set_wbs"):
             return
+        output_tasks = [
+            {"id": f"r{run_id}-task-quality", "title": "品質評価・改善ループ", "assignee": "QualityLoop", "done": False},
+            {"id": f"r{run_id}-task-output", "title": "Markdown出力", "assignee": "System", "done": False},
+        ]
+        if style in _STYLES_WITHOUT_EXEC_SUMMARY:
+            output_tasks.insert(0, {
+                "id": f"r{run_id}-task-discussion",
+                "title": "スペシャリスト対談",
+                "assignee": "Discussion",
+                "done": False,
+            })
         milestones = [
             {
                 "id": f"r{run_id}-milestone-planning",
@@ -272,10 +287,7 @@ class ResearchCoordinator:
             {
                 "id": f"r{run_id}-milestone-output",
                 "title": "出力フェーズ",
-                "tasks": [
-                    {"id": f"r{run_id}-task-quality", "title": "品質評価・改善ループ", "assignee": "QualityLoop", "done": False},
-                    {"id": f"r{run_id}-task-output", "title": "Markdown出力", "assignee": "System", "done": False},
-                ],
+                "tasks": output_tasks,
             },
         ]
         try:
@@ -435,6 +447,10 @@ class ResearchCoordinator:
         finally:
             await self._stop_search_server()
 
+    async def run_research(self, request: ResearchRequest, run_id: int = 0, session_id: str = "") -> ResearchResult:
+        return await self.run(request, run_id=run_id, session_id=session_id)
+
+
     def _make_artifact_writer(self, session_id: str) -> ArtifactWriter:
         """プロジェクト有無に関わらず ArtifactWriter を返す。"""
         active_id = self._project_manager.get_active_id()
@@ -512,7 +528,16 @@ class ResearchCoordinator:
                 system_prompt=f"あなたは{spec['expertise']}の専門家です。{topic}について調査します。",
             )
 
-        await self._push_wbs(topic, specialists, run_id=run_id)
+        await self._push_wbs(topic, specialists, run_id=run_id, style=request.style)
+
+        if not await self._wbs_approval_loop(
+            pm_output=pm_output,
+            specialists=specialists,
+            request=request,
+            topic=topic,
+            run_id=run_id,
+        ):
+            raise ResearchCancelledError
 
         artifact_writer = self._make_artifact_writer(session_id)
         try:
@@ -559,6 +584,30 @@ class ResearchCoordinator:
             style=request.style,
         )
 
+        if request.style == "book_chapter":
+            from research_team.orchestrator.book_pipeline import BookChapterPipeline
+            outline = await self._decompose_book_sections(topic, combined_content)
+            if outline and outline.all_sections():
+                await self._notify("CSM", f"📚 セクション構造を設計しました（{len(outline.all_sections())}節）")
+                pipeline = BookChapterPipeline(
+                    stream_fn=self._stream_agent_output,
+                    specialists=specialists,
+                )
+                book_content = await pipeline.run(
+                    topic=topic,
+                    outline=outline,
+                    raw_data=combined_content,
+                    agents=factory.agents,
+                    artifact_writer=artifact_writer,
+                    run_id=run_id,
+                    notify_fn=self._notify,
+                )
+                if book_content:
+                    combined_content = book_content
+            else:
+                logger.warning("book_chapter: outline decomposition failed, falling back to standard flow")
+                await self._notify("CSM", "⚠️ セクション分解に失敗しました。標準フローで続行します。")
+
         if request.style in _STYLES_WITHOUT_EXEC_SUMMARY:
             discussion_specialists = [
                 {"name": name, "expertise": ag._expertise, "research": combined_content[:3000]}
@@ -572,6 +621,8 @@ class ResearchCoordinator:
             )
             await self._mark_wbs_done(f"r{run_id}-task-discussion")
             combined_content = combined_content + "\n\n---\n\n" + discussion_transcript
+
+        if request.style in _STYLES_WITHOUT_EXEC_SUMMARY:
             format_prompt = self._build_format_prompt(topic, combined_content, request.style)
             formatted = await self._stream_agent_output(self._csm, format_prompt, "CSM")
             if formatted:
@@ -598,7 +649,7 @@ class ResearchCoordinator:
         async def evaluate(content: str) -> QualityFeedback:
             nonlocal iterations_done
             iterations_done += 1
-            deterministic = self._evaluate_content(content, request.depth)
+            deterministic = self._evaluate_content(content, request.depth, style=request.style)
             if not deterministic.passed:
                 return deterministic
             audit = await self._run_audit(content, topic)
@@ -686,6 +737,22 @@ class ResearchCoordinator:
                     logger.warning("write_specialist_draft failed: %s", exc)
         return "\n\n".join(sections)
 
+    async def _decompose_book_sections(
+        self,
+        topic: str,
+        raw_content: str,
+    ) -> "BookOutline | None":
+        """PMにセクション分解を依頼し、BookOutlineを返す。失敗時はNone。"""
+        from research_team.orchestrator.book_pipeline import parse_outline_from_pm_output
+        prompt = (
+            f"テーマ「{topic}」の書籍チャプターを執筆します。\n"
+            f"以下の調査データをもとに、章・節構造をJSON形式で設計してください。\n\n"
+            f"【調査データ（抜粋）】\n{raw_content[:5000]}\n\n"
+            f"SKILL.mdに記載のJSON形式で出力してください。"
+        )
+        raw = await self._stream_agent_output(self._pm_agent, prompt, "PM (セクション分解)")
+        return parse_outline_from_pm_output(raw)
+
     def _parse_team_spec(self, raw: str, topic: str) -> list[dict]:
         try:
             start = raw.find("[")
@@ -700,13 +767,14 @@ class ResearchCoordinator:
             pass
         return [{"name": "調査員", "expertise": f"{topic}の総合調査"}]
 
-    def _evaluate_content(self, content: str, depth: str) -> QualityFeedback:
+    def _evaluate_content(self, content: str, depth: str, style: str = "") -> QualityFeedback:
         issues: list[str] = []
-
-        min_length = {"quick": 300, "standard": 800, "deep": 2000}.get(depth, 800)
+        if style == "book_chapter":
+            min_length = {"quick": 3000, "standard": 8000, "deep": 15000}.get(depth, 8000)
+        else:
+            min_length = {"quick": 300, "standard": 800, "deep": 2000}.get(depth, 800)
         if len(content) < min_length:
             issues.append(f"内容が不十分です（{len(content)}文字 / 目標{min_length}文字）")
-
         if issues:
             return QualityFeedback(
                 passed=False,
@@ -728,6 +796,47 @@ class ResearchCoordinator:
         except (json.JSONDecodeError, ValueError):
             pass
         return {"decision": "APPROVE", "overall_score": 0.7}
+
+    async def _wbs_approval_loop(
+        self,
+        pm_output: str,
+        specialists: list[dict],
+        request: ResearchRequest,
+        topic: str,
+        run_id: int,
+        max_revisions: int = 5,
+    ) -> bool:
+        if not self._ui or not hasattr(self._ui, "show_wbs_approval"):
+            return True
+
+        await self._notify("PM", "WBSを作成しました。右パネルで内容を確認し、調査深度・出力スタイルを選択してください。")
+
+        for _ in range(max_revisions):
+            result = await self._ui.show_wbs_approval(
+                depth=request.depth,
+                style=request.style,
+            )
+
+            if result is None:
+                return False
+
+            if result.get("approved"):
+                request.depth = result["depth"]
+                request.style = result["style"]
+                return True
+
+            feedback_text = result.get("feedback", "")
+            if feedback_text:
+                revision_prompt = (
+                    f"ユーザーの修正依頼:\n{feedback_text}\n\n"
+                    f"テーマ: {topic}\n"
+                    f"現在のWBS:\n{pm_output}\n\n"
+                    f"改善されたWBSと品質目標を提示してください。"
+                )
+                pm_output = await self._stream_agent_output(self._pm_agent, revision_prompt, "PM")
+                await self._push_wbs(topic, specialists, run_id=run_id, style=request.style)
+
+        return True
 
     async def run_interactive(
         self,
@@ -757,38 +866,18 @@ class ResearchCoordinator:
                 await self._ui.append_agent_message("CSM", "ありがとうございました。調査を終了します。")
                 break
 
-            while True:
-                await self._ui.append_agent_message("CSM", _format_topic_confirmation(topic, depth))
-                answer = await self._ui.wait_for_user_message()
-                if _is_affirmative(answer):
-                    break
-                if _is_negative(answer):
-                    topic = None
-                    break
-                topic = answer
-
-            if topic is None:
-                await self._ui.append_agent_message("CSM", "承知しました。調査を終了します。")
-                break
-
-            style_menu = "\n".join(f"{k}: {v[1]}" for k, v in _STYLE_OPTIONS.items())
-            await self._ui.append_agent_message(
-                "CSM",
-                f"レポートのスタイルを選択してください:\n{style_menu}\n\n番号を入力してください（デフォルト: 1）",
-            )
-            style_input = await self._ui.wait_for_user_message()
-            style = _STYLE_OPTIONS.get(style_input.strip(), _STYLE_OPTIONS["1"])[0]
-
             session.run_count += 1
             run_id = session.run_count
             if not session.session_id:
                 session.session_id = self._make_session_id(topic)
-            request = ResearchRequest(topic=topic, depth=depth, output_format=output_format, style=style)
+            request = ResearchRequest(topic=topic, depth=depth, output_format=output_format)
             try:
                 result = await self.run(request, run_id=run_id, session_id=session.session_id)
                 session.current_topic = topic
                 session.last_report_path = result.output_path
                 await self._log("done", f"完了: {result.output_path}")
+            except ResearchCancelledError:
+                await self._ui.append_agent_message("CSM", "承知しました。調査をキャンセルしました。")
             except Exception as exc:
                 err_msg = f"エラーが発生しました: {exc}"
                 tb = traceback.format_exc()
