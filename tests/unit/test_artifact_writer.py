@@ -98,3 +98,19 @@ def test_write_raw_tool_result_creates_raw_subdir(tmp_path):
     raw_dir = tmp_path / "artifacts" / "raw"
     assert raw_dir.exists()
     assert any(raw_dir.iterdir())
+
+
+def test_write_book_section(tmp_path):
+    writer = ArtifactWriter(tmp_path)
+    path = writer.write_book_section(
+        run_id=1,
+        section_id="ch01_sec02",
+        chapter_title="第1章 市場概観",
+        section_title="1-2 競合動向",
+        content="## 競合動向\n\nA社は...",
+    )
+    assert Path(path).exists()
+    text = Path(path).read_text(encoding="utf-8")
+    assert "ch01_sec02" in text
+    assert "競合動向" in text
+    assert "ch01_sec02" in Path(path).name

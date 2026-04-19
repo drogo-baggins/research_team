@@ -107,6 +107,26 @@ class ArtifactWriter:
         path.write_text(header + content, encoding="utf-8")
         return str(path)
 
+    def write_book_section(
+        self,
+        run_id: int,
+        section_id: str,
+        chapter_title: str,
+        section_title: str,
+        content: str,
+    ) -> str:
+        """書籍セクション単位の執筆結果を保存する。"""
+        date_str = datetime.now().strftime("%Y%m%d")
+        path = self._dir / f"book_{section_id}_run{run_id}_{date_str}.md"
+        header = (
+            f"# 書籍セクション — {section_id} / Run {run_id} ({date_str})\n\n"
+            f"**章:** {chapter_title}  \n"
+            f"**節:** {section_title}\n\n"
+            "---\n\n"
+        )
+        path.write_text(header + content, encoding="utf-8")
+        return str(path)
+
     def write_raw_tool_result(
         self,
         run_id: int,
