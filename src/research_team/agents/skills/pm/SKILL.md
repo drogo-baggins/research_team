@@ -26,3 +26,32 @@ model: claude-sonnet-4-5
 - 中間成果物: `draft_{milestone}_{YYYYMMDD}.md`
 - 最終成果物: `report_{topic}_{YYYYMMDD}.{ext}`
 - WBS: `wbs_{project_id}.md`
+
+## 書籍チャプター向けセクション分解
+
+`book_chapter` スタイルの執筆依頼を受けた場合、調査データをもとに章・節構造を設計し、以下のJSON形式のみを出力してください。
+必ず ` ```json ` ブロックで囲み、説明文・前置きは一切含めないでください。
+
+```json
+[
+  {
+    "chapter_index": 1,
+    "chapter_title": "第1章 タイトル",
+    "sections": [
+      {
+        "section_index": 1,
+        "section_title": "1-1 節タイトル",
+        "key_points": ["論点A", "論点B", "論点C"],
+        "specialist_hint": "この節に最適な専門家の専門分野（例: 経済・金融）"
+      }
+    ]
+  }
+]
+```
+
+### セクション分解の指針
+- 1章あたり3〜5節を目安とする
+- 1節は単一のテーマ・論点を扱う（執筆量: 1,500〜3,000字相当）
+- key_points は節の中で必ず触れるべき具体的な論点を3点以上列挙する
+- specialist_hint は調査データから最も関連性の高い専門分野を指定する
+- 章・節の順序は読者が論理的に理解できる流れにする
