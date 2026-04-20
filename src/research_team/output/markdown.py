@@ -18,11 +18,14 @@ class MarkdownOutput:
         self._workspace_dir = Path(workspace_dir or os.path.join(os.getcwd(), "workspace"))
         self._workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, content: str, topic: str, report_type: str = "business") -> str:
-        date_str = datetime.now().strftime("%Y%m%d")
-        slug = _make_title(topic).replace(" ", "_").replace("/", "-").replace("…", "")
-        filename = f"report_{slug}_{date_str}.md"
-        output_path = self._workspace_dir / filename
+    def save(self, content: str, topic: str, report_type: str = "business", output_path: Path | str | None = None) -> str:
+        if output_path is not None:
+            final_path = Path(output_path)
+        else:
+            date_str = datetime.now().strftime("%Y%m%d")
+            slug = _make_title(topic).replace(" ", "_").replace("/", "-").replace("…", "")
+            filename = f"report_{slug}_{date_str}.md"
+            final_path = self._workspace_dir / filename
 
         body, sources_section = self._collect_sources(content)
         header = self._build_header(topic, report_type)
@@ -31,8 +34,8 @@ class MarkdownOutput:
             parts.append(sources_section)
         full_content = "\n\n".join(parts)
 
-        output_path.write_text(full_content, encoding="utf-8")
-        return str(output_path)
+        final_path.write_text(full_content, encoding="utf-8")
+        return str(final_path)
 
     def _collect_sources(self, content: str) -> tuple[str, str]:
         """Extract all ## Sources / ## 参考文献 sections, deduplicate, and return (body, unified_sources)."""
