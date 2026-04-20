@@ -1039,6 +1039,26 @@ class ResearchCoordinator:
                 await self._ui.append_agent_message("CSM", "ありがとうございました。調査を終了します。")
                 break
 
+            # 再生成意図の判定（既存runの整形・再生成）
+            regen = _parse_regenerate_intent(topic, last_run_id=session.last_run_id)
+            if regen is not None:
+                if not session.session_id:
+                    session.session_id = self._make_session_id(topic)
+                artifact_writer = self._make_artifact_writer(session.session_id)
+                regen.artifacts_dir = str(artifact_writer._dir)
+                try:
+                    result = await self._run_regenerate(regen, topic, session.session_id)
+                    session.last_report_path = result.output_path
+                    await self._notify("CSM", f"✅ レポートを更新しました:\n`{result.output_path}`")
+                    await self._log("done", f"再生成完了: {result.output_path}")
+                    continue
+                except FileNotFoundError as exc:
+                    logger.warning("Manifest not found for regenerate: %s", exc)
+                    await self._notify("CSM", "⚠️ 前回の調査データが見つかりません。新規調査として実行します。")
+                except Exception as exc:
+                    logger.warning("Regenerate failed: %s", exc)
+                    await self._notify("CSM", f"⚠️ 再生成に失敗しました: {exc}\n新規調査として実行します。")
+
             session.run_count += 1
             run_id = session.run_count
             if not session.session_id:

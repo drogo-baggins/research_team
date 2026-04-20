@@ -626,3 +626,107 @@ async def test_run_interactive_updates_session_last_run_id(tmp_path, monkeypatch
     await coord.run_interactive(depth="standard")
 
     assert state.last_run_id == 1
+
+
+@pytest.mark.asyncio
+async def test_parse_regenerate_intent_dispatches_in_interactive(tmp_path, monkeypatch):
+    import research_team.orchestrator.coordinator as coordinator_module
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    state = SessionState(last_run_id=3, session_id="sess-1")
+    monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
+
+    user_inputs = ["コラム形式に変えて", "終了"]
+    input_iter = iter(user_inputs)
+
+    async def fake_wait() -> str:
+        return next(input_iter)
+
+    mock_ui = MagicMock()
+    mock_ui.append_agent_message = AsyncMock()
+    mock_ui.append_log = AsyncMock()
+    mock_ui.wait_for_user_message = fake_wait
+    coord._ui = mock_ui
+    coord._log = AsyncMock()
+    notify_calls: list[tuple[str, str]] = []
+
+    async def fake_notify(agent: str, message: str) -> None:
+        notify_calls.append((agent, message))
+
+    coord._notify = fake_notify
+
+    regen_result = ResearchResult(
+        content="再生成結果",
+        output_path=str(tmp_path / "regen.md"),
+        quality_score=1.0,
+        iterations=0,
+    )
+
+    coord.run = AsyncMock()
+    coord._run_regenerate = AsyncMock(return_value=regen_result)
+
+    regen_request = coordinator_module.RegenerateRequest(
+        run_id=3,
+        artifacts_dir="",
+        re_research_specialists=[],
+    )
+
+    with patch.object(coordinator_module, "_parse_regenerate_intent", return_value=regen_request):
+        await coord.run_interactive(depth="standard")
+
+    coord._run_regenerate.assert_awaited_once()
+    coord.run.assert_not_called()
+    assert state.last_report_path == str(tmp_path / "regen.md")
+
+
+@pytest.mark.asyncio
+async def test_run_interactive_regenerate_manifest_missing_falls_back_to_run(tmp_path, monkeypatch):
+    import research_team.orchestrator.coordinator as coordinator_module
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    state = SessionState(last_run_id=2, session_id="sess-2")
+    monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
+
+    user_inputs = ["コラム形式に変えて", "終了"]
+    input_iter = iter(user_inputs)
+
+    async def fake_wait() -> str:
+        return next(input_iter)
+
+    mock_ui = MagicMock()
+    mock_ui.append_agent_message = AsyncMock()
+    mock_ui.append_log = AsyncMock()
+    mock_ui.wait_for_user_message = fake_wait
+    coord._ui = mock_ui
+    coord._log = AsyncMock()
+    notify_calls: list[tuple[str, str]] = []
+
+    async def fake_notify(agent: str, message: str) -> None:
+        notify_calls.append((agent, message))
+
+    coord._notify = fake_notify
+
+    regen_request = coordinator_module.RegenerateRequest(
+        run_id=2,
+        artifacts_dir="",
+        re_research_specialists=[],
+    )
+
+    coord._run_regenerate = AsyncMock(side_effect=FileNotFoundError("manifest missing"))
+    coord.run = AsyncMock(
+        return_value=ResearchResult(
+            content="通常調査",
+            output_path=str(tmp_path / "normal.md"),
+            quality_score=1.0,
+            iterations=1,
+        )
+    )
+
+    with patch.object(coordinator_module, "_parse_regenerate_intent", return_value=regen_request):
+        await coord.run_interactive(depth="standard")
+
+    coord._run_regenerate.assert_awaited_once()
+    coord.run.assert_awaited_once()
+    assert state.last_report_path == str(tmp_path / "normal.md")
+    notify_messages = [message for agent, message in notify_calls if agent == "CSM"]
+    assert any("前回の調査データが見つかりません" in msg for msg in notify_messages)
