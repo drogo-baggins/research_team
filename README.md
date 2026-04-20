@@ -99,6 +99,48 @@ SEARCH_ENGINE_URL=https://www.google.com/search?q=
 
 ---
 
+## プロバイダ認証
+
+`PI_MODEL` に指定するプロバイダによって認証方法が異なります。
+
+### GitHub Copilot（デフォルト）
+
+API キー不要。pi をインタラクティブモードで起動し、`/login` で OAuth 認証を行います。認証情報は `~/.pi/agent/` に保存され、以降は research-team からも自動的に利用されます。
+
+```bash
+pi         # pi をインタラクティブモードで起動
+/login     # コマンドを入力して GitHub Copilot を選択し OAuth 認証を完了する
+/quit      # 認証完了後に終了
+```
+
+> GitHub アカウントに Copilot のサブスクリプション（Individual / Business / Enterprise）が必要です。
+
+### Anthropic（API キー）
+
+```env
+# .env
+ANTHROPIC_API_KEY=sk-ant-...
+PI_MODEL=anthropic/claude-opus-4-5
+```
+
+### OpenAI（API キー）
+
+```env
+# .env
+OPENAI_API_KEY=sk-...
+PI_MODEL=openai/gpt-4o
+```
+
+### Anthropic Claude Pro/Max・OpenAI ChatGPT Plus/Pro（サブスクリプション）
+
+API キーの代わりにサブスクリプション経由で利用することも可能です。GitHub Copilot 同様に `pi` 起動後に `/login` でプロバイダを選択してください。
+
+### その他のプロバイダ
+
+Azure OpenAI・Google Gemini・Amazon Bedrock など多数のプロバイダに対応しています。詳細は [pi-agent 公式ドキュメント](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) を参照してください。
+
+---
+
 ## 使い方
 
 ### 基本起動
