@@ -9,6 +9,10 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from research_team.orchestrator.book_pipeline import BookOutline
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +54,7 @@ class ResearchResult:
 class SessionState:
     current_topic: str = ""
     last_report_path: str = ""
+    last_run_id: int = 0
     run_count: int = 0
     session_id: str = ""
 
@@ -564,7 +569,8 @@ class ResearchCoordinator:
             feedback: QualityFeedback,
             previous_content: str = "",
         ) -> str:
-            new_content = await self._run_specialist_pass(
+            nonlocal specialist_artifact_paths
+            specialist_result = await self._run_specialist_pass(
                 factory,
                 topic,
                 feedback,
@@ -573,6 +579,11 @@ class ResearchCoordinator:
                 artifact_writer=artifact_writer,
                 style=request.style,
             )
+            if isinstance(specialist_result, tuple):
+                new_content, specialist_artifact_paths = specialist_result
+            else:
+                new_content = specialist_result
+                specialist_artifact_paths = {}
             if previous_content and new_content:
                 # 前回内容を保持し、新発見を追記（ゼロトラスト蓄積）
                 return (
@@ -582,7 +593,7 @@ class ResearchCoordinator:
                 )
             return new_content or previous_content
 
-        combined_content = await self._run_specialist_pass(
+        specialist_result = await self._run_specialist_pass(
             factory,
             topic,
             None,
@@ -591,6 +602,12 @@ class ResearchCoordinator:
             artifact_writer=artifact_writer,
             style=request.style,
         )
+        if isinstance(specialist_result, tuple):
+            combined_content, specialist_artifact_paths = specialist_result
+        else:
+            combined_content = specialist_result
+            specialist_artifact_paths = {}
+        discussion_artifact_path: str | None = None
 
         if request.style == "book_chapter":
             from research_team.orchestrator.book_pipeline import BookChapterPipeline
@@ -627,6 +644,17 @@ class ResearchCoordinator:
                 artifact_writer=artifact_writer,
                 run_id=run_id,
             )
+            if artifact_writer:
+                try:
+                    discussion_candidates = sorted(
+                        artifact_writer._dir.glob(f"discussion_run{run_id}_*.md"),
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
+                    )
+                    if discussion_candidates:
+                        discussion_artifact_path = str(discussion_candidates[0])
+                except Exception as exc:
+                    logger.warning("resolve discussion_artifact_path failed: %s", exc)
             await self._mark_wbs_done(f"r{run_id}-task-discussion")
             combined_content = combined_content + "\n\n---\n\n" + discussion_transcript
 
@@ -695,6 +723,18 @@ class ResearchCoordinator:
         output_path = MarkdownOutput(self._get_agent_workspace()).save(
             combined_content, topic, report_type=request.style
         )
+        try:
+            artifact_writer.write_run_manifest(
+                run_id=run_id,
+                topic=topic,
+                style=request.style,
+                specialists=specialists,
+                artifact_paths=specialist_artifact_paths,
+                discussion_artifact_path=discussion_artifact_path,
+                report_path=output_path,
+            )
+        except Exception as exc:
+            logger.warning("write_run_manifest failed: %s", exc)
         await self._mark_wbs_done(f"r{run_id}-task-quality")
         await self._mark_wbs_done(f"r{run_id}-task-output")
 
@@ -720,8 +760,9 @@ class ResearchCoordinator:
         run_id: int = 0,
         artifact_writer: ArtifactWriter | None = None,
         style: str = "research_report",
-    ) -> str:
+    ) -> tuple[str, dict[str, str]]:
         sections: list[str] = []
+        artifact_paths: dict[str, str] = {}
         for i, (name, agent) in enumerate(factory.agents.items()):
             task_message = _build_research_task(topic, feedback, name, reference_content, style=style)
             section = await self._stream_agent_output(
@@ -737,13 +778,14 @@ class ResearchCoordinator:
             if section and artifact_writer:
                 try:
                     draft_path = artifact_writer.write_specialist_draft(run_id, name, section)
+                    artifact_paths[name] = draft_path
                     await self._notify(
                         "CSM",
                         f"📄 {name} の調査結果を保存しました:\n`{draft_path}`",
                     )
                 except Exception as exc:
                     logger.warning("write_specialist_draft failed: %s", exc)
-        return "\n\n".join(sections)
+        return "\n\n".join(sections), artifact_paths
 
     async def _decompose_book_sections(
         self,
@@ -852,8 +894,9 @@ class ResearchCoordinator:
                 request.depth = result["depth"]
                 request.style = result["style"]
                 request.locales = result.get("locales", request.locales)
-                if hasattr(self._search_engine, "set_preferred_locales"):
-                    self._search_engine.set_preferred_locales(request.locales)
+                set_locales = getattr(self._search_engine, "set_preferred_locales", None)
+                if callable(set_locales):
+                    set_locales(request.locales)
                 return True
 
             feedback_text = result.get("feedback", "")
@@ -906,6 +949,7 @@ class ResearchCoordinator:
                 result = await self.run(request, run_id=run_id, session_id=session.session_id)
                 session.current_topic = topic
                 session.last_report_path = result.output_path
+                session.last_run_id = run_id
                 await self._log("done", f"完了: {result.output_path}")
             except ResearchCancelledError:
                 await self._ui.append_agent_message("CSM", "承知しました。調査をキャンセルしました。")

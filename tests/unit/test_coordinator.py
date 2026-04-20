@@ -4,6 +4,7 @@ from research_team.orchestrator.coordinator import (
     ResearchCoordinator,
     ResearchRequest,
     ResearchResult,
+    SessionState,
     _extract_text,
     _build_research_task,
     _is_negative,
@@ -57,12 +58,12 @@ def test_build_research_task_with_agent_instructions():
 
 
 def test_research_request_locales_default():
-    request = ResearchRequest(topic="AI倫理", depth=3, output_format="report")
+    request = ResearchRequest(topic="AI倫理", depth="standard", output_format="report")
     assert request.locales == ["ja", "en"]
 
 
 def test_research_request_locales_custom():
-    request = ResearchRequest(topic="AI倫理", depth=3, output_format="report", locales=["zh-CN", "ko"])
+    request = ResearchRequest(topic="AI倫理", depth="standard", output_format="report", locales=["zh-CN", "ko"])
     assert request.locales == ["zh-CN", "ko"]
 
 
@@ -353,6 +354,13 @@ def test_coordinator_falls_back_to_workspace_root_when_no_active(tmp_path):
     assert coord._get_agent_workspace() == str(tmp_path)
 
 
+def test_session_state_has_last_run_id():
+    state = SessionState()
+    assert state.last_run_id == 0
+    state.last_run_id = 3
+    assert state.last_run_id == 3
+
+
 def test_make_artifact_writer_uses_project_dir_when_active(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
     project = coord._project_manager.init("テスト")
@@ -559,3 +567,39 @@ async def test_run_interactive_additional_request_loop(tmp_path):
 
     assert len(run_calls) == 2, f"run() が{len(run_calls)}回呼ばれた（期待: 2回）"
     assert run_calls[0].topic == "テストテーマA"
+
+
+@pytest.mark.asyncio
+async def test_run_interactive_updates_session_last_run_id(tmp_path, monkeypatch):
+    import research_team.orchestrator.coordinator as coordinator_module
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    state = SessionState()
+    monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
+
+    user_inputs = ["テストテーマ", "終了"]
+    input_iter = iter(user_inputs)
+
+    async def fake_wait() -> str:
+        return next(input_iter)
+
+    mock_ui = MagicMock()
+    mock_ui.append_agent_message = AsyncMock()
+    mock_ui.append_log = AsyncMock()
+    mock_ui.wait_for_user_message = fake_wait
+    coord._ui = mock_ui
+    coord._log = AsyncMock()
+
+    async def fake_run(request: ResearchRequest, run_id: int = 0, session_id: str = "") -> ResearchResult:
+        return ResearchResult(
+            content="調査結果",
+            output_path=str(tmp_path / "report.md"),
+            quality_score=1.0,
+            iterations=1,
+        )
+
+    coord.run = fake_run
+
+    await coord.run_interactive(depth="standard")
+
+    assert state.last_run_id == 1
