@@ -88,6 +88,7 @@ cp .env.example .env
 | `OPENAI_API_KEY` | — | OpenAI 経由で LLM を使う場合 |
 | `ANTHROPIC_API_KEY` | — | Anthropic 経由で LLM を使う場合 |
 | `PI_AGENT_BIN` | `pi` | pi-agent バイナリのパスまたはコマンド名 |
+| `PI_MODEL` | `github-copilot/claude-sonnet-4.5` | pi-agent が使用する LLM モデル（`<provider>/<model-id>` 形式） |
 | `MAX_QUALITY_ITERATIONS` | `3` | 品質ループの最大繰り返し回数 |
 
 **最低限必要な設定（human モード）:**
