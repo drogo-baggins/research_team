@@ -51,6 +51,17 @@ class ResearchResult:
 
 
 @dataclass
+class RegenerateRequest:
+    """既存 run のアーティファクトを再利用してレポートを再生成する。"""
+
+    run_id: int
+    artifacts_dir: str  # manifest_run{N}.json の親ディレクトリ
+    re_research_specialists: list[str]  # 再調査対象のスペシャリスト名（空=整形のみ）
+    style: str | None = None  # None = manifest の style を引き継ぐ
+    overwrite_report: bool = True
+
+
+@dataclass
 class SessionState:
     current_topic: str = ""
     last_report_path: str = ""
@@ -189,6 +200,40 @@ _STYLE_INSTRUCTIONS: dict[str, str] = {
 }
 
 _STYLES_WITHOUT_EXEC_SUMMARY = {"book_chapter", "magazine_column"}
+
+_REGEN_KEYWORDS = [
+    "変えて",
+    "修正して",
+    "直して",
+    "書き直して",
+    "形式に",
+    "スタイルを",
+    "再整形",
+    "深掘り",
+    "このレポート",
+    "前のレポート",
+    "さっきのレポート",
+    "このセクション",
+    "この節",
+    "もっと詳しく",
+]
+
+
+def _parse_regenerate_intent(text: str, last_run_id: int) -> RegenerateRequest | None:
+    """
+    ユーザー入力が既存レポートへの修正依頼かどうかを判定する。
+    修正依頼なら RegenerateRequest を返し、新規テーマなら None を返す。
+    """
+    normalized = text.strip()
+    if last_run_id == 0:
+        return None
+    if any(kw in normalized for kw in _REGEN_KEYWORDS):
+        return RegenerateRequest(
+            run_id=last_run_id,
+            artifacts_dir="",  # 呼び出し側で設定
+            re_research_specialists=[],
+        )
+    return None
 
 
 class ResearchCancelledError(Exception):
@@ -749,6 +794,60 @@ class ResearchCoordinator:
             output_path=output_path,
             quality_score=final_feedback.score,
             iterations=max(iterations_done, 1),
+        )
+
+    async def _run_regenerate(
+        self,
+        request: RegenerateRequest,
+        regen_request_text: str,
+        session_id: str,
+    ) -> ResearchResult:
+        from research_team.output.run_manifest import RunManifest
+        from research_team.output.artifact_reconstructor import ArtifactReconstructor
+
+        manifest_path = Path(request.artifacts_dir) / f"manifest_run{request.run_id}.json"
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"RunManifest が見つかりません: {manifest_path}")
+
+        manifest = RunManifest.load(manifest_path)
+        style = request.style or manifest.style
+        topic = manifest.topic
+
+        # 再調査対象スペシャリストの artifact を更新（現実装では空リスト = 整形のみ）
+        if request.re_research_specialists:
+            # フェーズ2: スペシャリスト再調査（現在は未実装、空リストで到達しない）
+            logger.warning("re_research_specialists is not yet implemented; skipping re-research")
+
+        # combined_content を再構成
+        reconstructor = ArtifactReconstructor()
+        combined_content = reconstructor.reconstruct(manifest)
+
+        # CSM 整形
+        if style in _STYLES_WITHOUT_EXEC_SUMMARY:
+            format_prompt = self._build_format_prompt(topic, combined_content, style)
+            formatted = await self._stream_agent_output(self._csm, format_prompt, "CSM")
+            if formatted:
+                combined_content = formatted
+        else:
+            summary_prompt = self._build_summary_prompt(topic, combined_content)
+            exec_summary = await self._stream_agent_output(self._csm, summary_prompt, "CSM")
+            if exec_summary:
+                combined_content = f"## エグゼクティブサマリー\n\n{exec_summary}\n\n---\n\n{combined_content}"
+
+        # 上書き or 新規保存
+        output_path_arg = Path(manifest.report_path) if request.overwrite_report else None
+        output_path = MarkdownOutput(self._get_agent_workspace()).save(
+            combined_content,
+            topic,
+            report_type=style,
+            output_path=output_path_arg,
+        )
+
+        return ResearchResult(
+            content=combined_content,
+            output_path=output_path,
+            quality_score=1.0,
+            iterations=0,
         )
 
     async def _run_specialist_pass(

@@ -510,6 +510,29 @@ def test_summary_prompt_uses_full_content_when_no_env(monkeypatch, tmp_path):
     assert long_content in prompt
 
 
+def test_parse_regenerate_intent_style_change():
+    from research_team.orchestrator.coordinator import _parse_regenerate_intent, RegenerateRequest
+
+    result = _parse_regenerate_intent("コラム形式に変えて", last_run_id=1)
+    assert result is not None
+    assert isinstance(result, RegenerateRequest)
+    assert result.re_research_specialists == []
+
+
+def test_parse_regenerate_intent_new_topic_returns_none():
+    from research_team.orchestrator.coordinator import _parse_regenerate_intent
+
+    result = _parse_regenerate_intent("量子コンピュータについて調査して", last_run_id=1)
+    assert result is None
+
+
+def test_parse_regenerate_intent_no_last_run_returns_none():
+    from research_team.orchestrator.coordinator import _parse_regenerate_intent
+
+    result = _parse_regenerate_intent("コラム形式に変えて", last_run_id=0)
+    assert result is None
+
+
 def test_audit_prompt_uses_full_content_when_no_env(monkeypatch, tmp_path):
     """RT_MAX_AUDIT_CHARS 未設定なら content 全文が audit_prompt に含まれる。"""
     monkeypatch.delenv("RT_MAX_AUDIT_CHARS", raising=False)
