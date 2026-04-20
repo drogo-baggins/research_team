@@ -186,6 +186,38 @@ class ArtifactWriter:
         path.write_text("\n".join(lines), encoding="utf-8")
         return str(path)
 
+    def write_run_manifest(
+        self,
+        run_id: int,
+        topic: str,
+        style: str,
+        specialists: list[dict],
+        artifact_paths: dict[str, str],
+        discussion_artifact_path: str | None,
+        report_path: str,
+    ) -> str:
+        from research_team.output.run_manifest import RunManifest, SpecialistEntry
+
+        entries = [
+            SpecialistEntry(
+                name=s["name"],
+                expertise=s["expertise"],
+                artifact_path=artifact_paths.get(s["name"], ""),
+            )
+            for s in specialists
+        ]
+        manifest = RunManifest(
+            run_id=run_id,
+            topic=topic,
+            style=style,
+            specialists=entries,
+            discussion_artifact_path=discussion_artifact_path,
+            report_path=report_path,
+        )
+        path = self._dir / f"manifest_run{run_id}.json"
+        manifest.save(path)
+        return str(path)
+
     @classmethod
     def for_session(cls, workspace_dir: Path, session_id: str) -> "ArtifactWriter":
         """プロジェクト不在時のフォールバック用。workspace/sessions/{session_id}/artifacts/ を使う。"""

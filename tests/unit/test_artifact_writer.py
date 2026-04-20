@@ -114,3 +114,32 @@ def test_write_book_section(tmp_path):
     assert "ch01_sec02" in text
     assert "競合動向" in text
     assert "ch01_sec02" in Path(path).name
+
+
+def test_write_run_manifest(tmp_path):
+    from research_team.output.run_manifest import RunManifest
+    writer = ArtifactWriter(tmp_path)
+    specialists = [
+        {"name": "経済アナリスト", "expertise": "経済・金融"},
+        {"name": "技術者", "expertise": "AI・機械学習"},
+    ]
+    artifact_paths = {
+        "経済アナリスト": str(tmp_path / "specialist_経済アナリスト_run1_20260420.md"),
+        "技術者": str(tmp_path / "specialist_技術者_run1_20260420.md"),
+    }
+    report_path = str(tmp_path / "report_test_20260420.md")
+
+    path = writer.write_run_manifest(
+        run_id=1,
+        topic="テスト",
+        style="research_report",
+        specialists=specialists,
+        artifact_paths=artifact_paths,
+        discussion_artifact_path=None,
+        report_path=report_path,
+    )
+
+    manifest = RunManifest.load(Path(path))
+    assert manifest.run_id == 1
+    assert len(manifest.specialists) == 2
+    assert manifest.specialists[0].artifact_path == artifact_paths["経済アナリスト"]
