@@ -237,8 +237,10 @@ async def test_stream_agent_output_saves_raw_on_tool_end(tmp_path):
         yield AgentEvent(type="tool_execution_end", data={
             "toolName": "web_search",
             "isError": False,
-            "args": {"query": "テスト"},
-            "result": {"query": "テスト", "results": [{"title": "T", "url": "http://x.com", "content": "c"}]},
+            "result": {
+                "content": [{"type": "text", "text": "..."}],
+                "details": [{"title": "T", "url": "http://x.com", "content": "c", "source": "human"}],
+            },
         })
         yield AgentEvent(type="message_update", data={"assistantMessageEvent": {"type": "text_delta", "delta": "完了"}})
         yield AgentEvent(type="agent_end", data={})

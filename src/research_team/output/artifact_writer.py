@@ -145,7 +145,8 @@ class ArtifactWriter:
 
         if tool_name == "web_search":
             query = result_data.get("query", "")
-            results = result_data.get("results", [])
+            details = result_data.get("details", [])
+            results = details if isinstance(details, list) else []
             lines = [
                 f"# web_search — {specialist_name} / Run {run_id} / #{call_index}",
                 "",
@@ -162,7 +163,10 @@ class ArtifactWriter:
                 lines.append("")
         elif tool_name == "web_fetch":
             url = result_data.get("url", "")
-            content = result_data.get("content", "")
+            details = result_data.get("details", {})
+            content = details.get("content", "") if isinstance(details, dict) else ""
+            if not content:
+                content = result_data.get("content", "")
             if isinstance(content, list):
                 content = "\n".join(str(c) for c in content)
             lines = [
