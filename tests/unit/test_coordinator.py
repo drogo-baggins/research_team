@@ -501,6 +501,107 @@ def test_evaluate_content_default_unchanged():
     assert result.passed is True
 
 
+def test_assemble_book_from_outline_basic(tmp_path):
+    from research_team.orchestrator.book_pipeline import BookOutline
+
+    outline = BookOutline(chapters=[
+        {
+            "chapter_index": 1,
+            "chapter_title": "導入",
+            "sections": [
+                {"section_index": 1, "section_title": "背景", "key_points": []},
+                {"section_index": 2, "section_title": "目的", "key_points": []},
+            ],
+        },
+        {
+            "chapter_index": 2,
+            "chapter_title": "本論",
+            "sections": [
+                {"section_index": 1, "section_title": "分析", "key_points": []},
+            ],
+        },
+    ])
+
+    def make_artifact(section_id: str, content: str) -> str:
+        path = tmp_path / f"book_{section_id}_run1_20260101.md"
+        path.write_text(
+            f"# 書籍セクション — {section_id} / Run 1 (20260101)\n\n"
+            f"**章:** 導入  \n**節:** test\n\n---\n\n{content}",
+            encoding="utf-8",
+        )
+        return str(path)
+
+    section_paths = {
+        "ch01_sec01": {"artifact_path": make_artifact("ch01_sec01", "### 背景\n\n背景の内容です。")},
+        "ch01_sec02": {"artifact_path": make_artifact("ch01_sec02", "### 目的\n\n目的の内容です。")},
+        "ch02_sec01": {"artifact_path": make_artifact("ch02_sec01", "### 分析\n\n分析の内容です。")},
+    }
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    result = coord._assemble_book_from_outline(outline, section_paths)
+
+    assert "## 目次" in result
+    assert "第1章" in result
+    assert "第2章" in result
+    assert "背景の内容です。" in result
+    assert "目的の内容です。" in result
+    assert "分析の内容です。" in result
+    assert "---" in result
+
+
+def test_assemble_book_from_outline_with_discussion(tmp_path):
+    from research_team.orchestrator.book_pipeline import BookOutline
+
+    outline = BookOutline(chapters=[
+        {
+            "chapter_index": 1,
+            "chapter_title": "テスト章",
+            "sections": [
+                {"section_index": 1, "section_title": "節A", "key_points": []},
+            ],
+        },
+    ])
+
+    sec_path = tmp_path / "book_ch01_sec01_run1_20260101.md"
+    sec_path.write_text(
+        "# header\n\n**章:** テスト  \n**節:** A\n\n---\n\n### 節A\n\n節Aの内容。",
+        encoding="utf-8",
+    )
+
+    disc_path = tmp_path / "discussion_run1_20260101.md"
+    disc_path.write_text("## スペシャリスト対談\n\n対談内容。", encoding="utf-8")
+
+    section_paths = {"ch01_sec01": {"artifact_path": str(sec_path)}}
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    result = coord._assemble_book_from_outline(
+        outline, section_paths, discussion_artifact_path=str(disc_path)
+    )
+
+    assert "節Aの内容。" in result
+    assert "スペシャリスト対談" in result
+
+
+def test_assemble_book_missing_artifact_skipped(tmp_path):
+    from research_team.orchestrator.book_pipeline import BookOutline
+
+    outline = BookOutline(chapters=[
+        {
+            "chapter_index": 1,
+            "chapter_title": "章",
+            "sections": [
+                {"section_index": 1, "section_title": "節", "key_points": []},
+            ],
+        },
+    ])
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    result = coord._assemble_book_from_outline(outline, {})
+
+    assert "## 目次" in result
+    assert "第1章" in result
+
+
 def test_summary_prompt_uses_full_content_when_no_env(monkeypatch, tmp_path):
     """RT_MAX_SUMMARY_CHARS 未設定なら combined_content 全文が summary_prompt に含まれる。"""
     monkeypatch.delenv("RT_MAX_SUMMARY_CHARS", raising=False)

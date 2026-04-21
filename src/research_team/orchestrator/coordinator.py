@@ -604,6 +604,61 @@ class ResearchCoordinator:
             f"\n\n【重要】サマリー本文のみを出力してください。説明や前置きは不要です。"
         )
 
+    def _assemble_book_from_outline(
+        self,
+        outline: "BookOutline",
+        section_paths: dict[str, dict],
+        discussion_artifact_path: str | None = None,
+    ) -> str:
+        from pathlib import Path as _Path
+
+        toc_lines = ["## 目次", ""]
+        for ch in outline.chapters:
+            ch_idx = ch["chapter_index"]
+            ch_title = ch["chapter_title"]
+            toc_lines.append(f"**第{ch_idx}章　{ch_title}**")
+            for sec in ch.get("sections", []):
+                sec_idx = sec["section_index"]
+                sec_title = sec["section_title"]
+                toc_lines.append(f"　　第{ch_idx}.{sec_idx}節　{sec_title}")
+            toc_lines.append("")
+
+        chapter_parts: list[str] = []
+        for ch in outline.chapters:
+            ch_idx = ch["chapter_index"]
+            ch_title = ch["chapter_title"]
+            ch_lines: list[str] = [f"## 第{ch_idx}章　{ch_title}", ""]
+            for sec in ch.get("sections", []):
+                sec_idx = sec["section_index"]
+                section_id = f"ch{ch_idx:02d}_sec{sec_idx:02d}"
+                entry = section_paths.get(section_id, {})
+                artifact_path = entry.get("artifact_path", "")
+                content = ""
+                if artifact_path:
+                    try:
+                        raw = _Path(artifact_path).read_text(encoding="utf-8")
+                        sep_idx = raw.find("---\n\n")
+                        content = raw[sep_idx + 5:].strip() if sep_idx != -1 else raw.strip()
+                    except Exception as exc:
+                        logger.warning("_assemble_book: failed to read %s: %s", artifact_path, exc)
+                if content:
+                    ch_lines.append(content)
+                    ch_lines.append("")
+            chapter_parts.append("\n".join(ch_lines))
+
+        toc = "\n".join(toc_lines)
+        body = "\n\n".join(chapter_parts)
+        result = f"{toc}\n\n---\n\n{body}"
+
+        if discussion_artifact_path:
+            try:
+                disc = _Path(discussion_artifact_path).read_text(encoding="utf-8").strip()
+                result += f"\n\n---\n\n{disc}"
+            except Exception as exc:
+                logger.warning("_assemble_book: failed to read discussion: %s", exc)
+
+        return result
+
     def _build_format_prompt(self, topic: str, content: str, style: str) -> str:
         max_chars = os.environ.get("RT_MAX_SUMMARY_CHARS")
         body = content[:int(max_chars)] if max_chars else content
@@ -793,11 +848,13 @@ class ResearchCoordinator:
             specialist_artifact_paths = {}
         discussion_artifact_path: str | None = None
         book_section_paths: dict[str, dict] = {}
+        book_outline: "BookOutline | None" = None
 
         if request.style == "book_chapter":
             from research_team.orchestrator.book_pipeline import BookChapterPipeline
             outline = await self._decompose_book_sections(topic, combined_content, request.depth)
             if outline and outline.all_sections():
+                book_outline = outline
                 await self._notify("CSM", f"📚 セクション構造を設計しました（{len(outline.all_sections())}節）")
                 await self._push_book_writing_milestone(
                     topic=topic,
@@ -851,7 +908,13 @@ class ResearchCoordinator:
             await self._mark_wbs_done(f"r{run_id}-task-discussion")
             combined_content = combined_content + "\n\n---\n\n" + discussion_transcript
 
-        if request.style in _STYLES_WITHOUT_EXEC_SUMMARY:
+        if request.style == "book_chapter" and book_outline:
+            combined_content = self._assemble_book_from_outline(
+                outline=book_outline,
+                section_paths=book_section_paths,
+                discussion_artifact_path=discussion_artifact_path,
+            )
+        elif request.style == "magazine_column":
             format_prompt = self._build_format_prompt(topic, combined_content, request.style)
             formatted = await self._stream_agent_output(self._csm, format_prompt, "CSM")
             if formatted:
