@@ -15,9 +15,15 @@ def _get_tavily_engine(control_ui=None) -> SearchEngine:
     return TavilySearchEngine()
 
 
+def _get_serper_engine(control_ui=None) -> SearchEngine:
+    from research_team.search.serper import SerperSearchEngine
+    return SerperSearchEngine()
+
+
 _FACTORIES = {
     "human": _get_human_engine,
     "tavily": _get_tavily_engine,
+    "serper": _get_serper_engine,
 }
 
 

@@ -234,7 +234,7 @@
 |---|---|---|
 | 11-1 | `TavilySearchEngine` — Tavily API による検索・取得 | ✅ 実装済 |
 | 11-2 | `SEARCH_MODE=tavily` 環境変数で切り替え | ✅ 実装済 |
-| 11-3 | Serper 検索エンジン対応 | ❌ 未実装 |
+| 11-3 | Serper 検索エンジン対応 | ✅ 実装済 |
 | 11-4 | Brave Search 対応 | ❌ 未実装 |
 
 ---

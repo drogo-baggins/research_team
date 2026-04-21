@@ -276,7 +276,8 @@ async def test_run_returns_research_result(tmp_path):
          patch.object(coord._csm, "run", side_effect=_fake_run), \
          patch.object(coord._pm_agent, "run", side_effect=_fake_run), \
          patch.object(coord._team_builder, "run", side_effect=_fake_run), \
-         patch.object(coord._auditor, "run", side_effect=_fake_run):
+         patch.object(coord._auditor, "run", side_effect=_fake_run), \
+         patch.object(coord._doc_editor, "run", side_effect=_fake_run):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
 
         async def fake_specialist_run(self, message, workspace_dir=None, search_port=0):

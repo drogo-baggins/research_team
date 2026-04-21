@@ -180,6 +180,7 @@ async def test_research_request_with_reference_file_passes_content_to_task(tmp_p
          patch.object(coord._pm_agent, "run", side_effect=_fake_run), \
          patch.object(coord._team_builder, "run", side_effect=_fake_run), \
          patch.object(coord._auditor, "run", side_effect=_fake_run), \
+         patch.object(coord._doc_editor, "run", side_effect=_fake_run), \
          patch.object(coord, "_evaluate_content", return_value=QualityFeedback(passed=True, score=1.0)):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
         with patch.object(DynamicSpecialistAgent, "run", fake_run):
@@ -224,6 +225,7 @@ async def test_research_request_without_reference_files_works_as_before(tmp_path
          patch.object(coord._pm_agent, "run", side_effect=_fake_run), \
          patch.object(coord._team_builder, "run", side_effect=_fake_run), \
          patch.object(coord._auditor, "run", side_effect=_fake_run), \
+         patch.object(coord._doc_editor, "run", side_effect=_fake_run), \
          patch.object(coord, "_evaluate_content", return_value=QualityFeedback(passed=True, score=1.0)):
         from research_team.agents.dynamic.factory import DynamicSpecialistAgent
         with patch.object(DynamicSpecialistAgent, "run", _fake):
