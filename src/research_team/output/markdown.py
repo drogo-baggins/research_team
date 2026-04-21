@@ -28,8 +28,7 @@ class MarkdownOutput:
             final_path = self._workspace_dir / filename
 
         body, sources_section = self._collect_sources(content)
-        header = self._build_header(topic, report_type)
-        parts = [header, body]
+        parts = [body]
         if sources_section:
             parts.append(sources_section)
         full_content = "\n\n".join(parts)
@@ -57,18 +56,4 @@ class MarkdownOutput:
         sources_section = "## 参考文献\n\n" + "\n".join(unique) if unique else ""
         return body.strip(), sources_section
 
-    def _build_header(self, topic: str, report_type: str) -> str:
-        date_str = datetime.now().strftime("%Y年%m月%d日")
-        type_labels = {
-            "business": "ビジネス報告",
-            "academic": "学術レポート",
-            "paper": "論文",
-            "book": "書籍",
-            "research_report": "調査レポート",
-            "executive_memo": "エグゼクティブメモ",
-            "magazine_column": "マガジンコラム",
-            "book_chapter": "書籍チャプター",
-        }
-        label = type_labels.get(report_type, "報告書")
-        title = _make_title(topic)
-        return f"# {title}\n\n**形式:** {label}  \n**作成日:** {date_str}"
+
