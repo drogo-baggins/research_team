@@ -1080,16 +1080,17 @@ async def test_run_research_resume_reads_completed_specialist_file(tmp_path):
         mock_ql_cls.return_value = mock_ql_instance
         with patch("research_team.orchestrator.coordinator.MarkdownOutput") as mock_md:
             mock_md.return_value.save = MagicMock(return_value=str(tmp_path / "report.md"))
-            with patch.object(resume_writer, "write_run_manifest", return_value=""):
-                with patch.object(resume_writer, "clear_run_progress"):
-                    request = ResearchRequest(topic="テスト調査", depth="standard", style="research_report", locales=["ja"])
-                    await coord._run_research(
-                        "テスト調査",
-                        request,
-                        run_id=1,
-                        resume_from=progress,
-                        resume_writer=resume_writer,
-                    )
+            with patch("research_team.orchestrator.coordinator.edit_document", new=AsyncMock(side_effect=lambda _fn, _ag, _t, c, _s: c)):
+                with patch.object(resume_writer, "write_run_manifest", return_value=""):
+                    with patch.object(resume_writer, "clear_run_progress"):
+                        request = ResearchRequest(topic="テスト調査", depth="standard", style="research_report", locales=["ja"])
+                        await coord._run_research(
+                            "テスト調査",
+                            request,
+                            run_id=1,
+                            resume_from=progress,
+                            resume_writer=resume_writer,
+                        )
 
     assert len(pass_calls) == 1
     pre = pass_calls[0]["pre_completed"]
@@ -1142,16 +1143,17 @@ async def test_run_research_resume_handles_missing_artifact_files(tmp_path):
         mock_ql_cls.return_value = mock_ql_instance
         with patch("research_team.orchestrator.coordinator.MarkdownOutput") as mock_md:
             mock_md.return_value.save = MagicMock(return_value=str(tmp_path / "report.md"))
-            with patch.object(resume_writer, "write_run_manifest", return_value=""):
-                with patch.object(resume_writer, "clear_run_progress"):
-                    request = ResearchRequest(topic="テスト調査", depth="standard", style="research_report", locales=["ja"])
-                    await coord._run_research(
-                        "テスト調査",
-                        request,
-                        run_id=1,
-                        resume_from=progress,
-                        resume_writer=resume_writer,
-                    )
+            with patch("research_team.orchestrator.coordinator.edit_document", new=AsyncMock(side_effect=lambda _fn, _ag, _t, c, _s: c)):
+                with patch.object(resume_writer, "write_run_manifest", return_value=""):
+                    with patch.object(resume_writer, "clear_run_progress"):
+                        request = ResearchRequest(topic="テスト調査", depth="standard", style="research_report", locales=["ja"])
+                        await coord._run_research(
+                            "テスト調査",
+                            request,
+                            run_id=1,
+                            resume_from=progress,
+                            resume_writer=resume_writer,
+                        )
 
     assert len(pass_calls) == 1
     pre = pass_calls[0]["pre_completed"]

@@ -25,6 +25,7 @@ from research_team.agents.team_builder import TeamBuilder
 from research_team.project.manager import ProjectManager as ProjectFileManager
 from research_team.orchestrator.quality_loop import QualityFeedback, QualityLoop
 from research_team.orchestrator.discussion import DiscussionOrchestrator, generate_personas
+from research_team.orchestrator.document_editor import DocumentEditorAgent, edit_document
 from research_team.output.artifact_writer import ArtifactWriter
 from research_team.output.markdown import MarkdownOutput
 from research_team.pi_bridge.search_server import SearchServer
@@ -248,6 +249,7 @@ class ResearchCoordinator:
         self._csm = ClientSuccessManager()
         self._pm_agent = PMAgent()
         self._auditor = Auditor()
+        self._doc_editor = DocumentEditorAgent()
         self._project_manager = ProjectFileManager(workspace_dir=self._workspace_dir)
         self._team_builder = TeamBuilder()
         self._search_engine = SearchEngineFactory.create(control_ui=ui)
@@ -926,6 +928,14 @@ class ResearchCoordinator:
                 combined_content = (
                     f"## エグゼクティブサマリー\n\n{exec_summary}\n\n---\n\n{combined_content}"
                 )
+
+        combined_content = await edit_document(
+            self._stream_agent_output,
+            self._doc_editor,
+            topic,
+            combined_content,
+            request.style,
+        )
 
         active_id = self._project_manager.get_active_id()
         if active_id:
