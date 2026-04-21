@@ -497,6 +497,11 @@ class ResearchCoordinator:
                                 # ゼロトラスト蓄積: 生ツール結果を即時保存
                                 if artifact_writer and tool in ("web_search", "web_fetch") and not is_error:
                                     start_args = pending_tool_args.get(tool, {})
+                                    logger.debug(
+                                        "tool_execution_end raw event.data keys=%s data=%s",
+                                        list(event.data.keys()),
+                                        event.data,
+                                    )
                                     result_data = {**start_args, **(event.data.get("result") or {})}
                                     try:
                                         call_index = sum(
