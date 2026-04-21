@@ -114,7 +114,7 @@ def test_run_returns_combined_text():
         ],
     )
     outline = _make_outline()
-    result = asyncio.run(
+    result, section_paths = asyncio.run(
         pipeline.run(
             topic="テスト",
             outline=outline,

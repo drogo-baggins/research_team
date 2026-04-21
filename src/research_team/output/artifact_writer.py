@@ -195,8 +195,9 @@ class ArtifactWriter:
         artifact_paths: dict[str, str],
         discussion_artifact_path: str | None,
         report_path: str,
+        book_section_paths: dict[str, dict] | None = None,
     ) -> str:
-        from research_team.output.run_manifest import RunManifest, SpecialistEntry
+        from research_team.output.run_manifest import RunManifest, SpecialistEntry, BookSectionEntry
 
         entries = [
             SpecialistEntry(
@@ -206,6 +207,15 @@ class ArtifactWriter:
             )
             for s in specialists
         ]
+        book_section_entries = [
+            BookSectionEntry(
+                section_id=sid,
+                chapter_title=info.get("chapter_title", ""),
+                section_title=info.get("section_title", ""),
+                artifact_path=info.get("artifact_path", ""),
+            )
+            for sid, info in (book_section_paths or {}).items()
+        ]
         manifest = RunManifest(
             run_id=run_id,
             topic=topic,
@@ -213,10 +223,36 @@ class ArtifactWriter:
             specialists=entries,
             discussion_artifact_path=discussion_artifact_path,
             report_path=report_path,
+            book_sections=book_section_entries,
         )
         path = self._dir / f"manifest_run{run_id}.json"
         manifest.save(path)
         return str(path)
+
+    def write_run_progress(self, progress: "RunProgress") -> str:
+        from research_team.output.run_progress import FILENAME
+
+        path = self._dir / FILENAME
+        progress.save(path)
+        return str(path)
+
+    def load_run_progress(self) -> "RunProgress | None":
+        from research_team.output.run_progress import FILENAME, RunProgress
+
+        path = self._dir / FILENAME
+        if not path.exists():
+            return None
+        try:
+            return RunProgress.load(path)
+        except Exception:
+            return None
+
+    def clear_run_progress(self) -> None:
+        from research_team.output.run_progress import FILENAME
+
+        path = self._dir / FILENAME
+        if path.exists():
+            path.unlink()
 
     @classmethod
     def for_session(cls, workspace_dir: Path, session_id: str) -> "ArtifactWriter":

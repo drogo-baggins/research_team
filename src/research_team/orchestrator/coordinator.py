@@ -9,13 +9,14 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from research_team.orchestrator.book_pipeline import BookOutline
 
 logger = logging.getLogger(__name__)
 
+from research_team.output.run_progress import RunProgress, SpecialistProgress
 from research_team.agents.csm import ClientSuccessManager
 from research_team.agents.auditor import Auditor
 from research_team.agents.dynamic.factory import DynamicAgentFactory
@@ -301,9 +302,14 @@ class ResearchCoordinator:
             except Exception as exc:
                 logger.warning("update_wbs_task failed (id=%s): %s", task_id, exc)
 
-    async def _push_wbs(self, topic: str, specialists: list[dict], run_id: int = 0, style: str = "") -> None:
-        if not self._ui or not hasattr(self._ui, "set_wbs"):
-            return
+    def _build_wbs_milestones(
+        self,
+        topic: str,
+        specialists: list[dict],
+        run_id: int = 0,
+        style: str = "",
+        book_outline: "BookOutline | None" = None,
+    ) -> list[dict]:
         output_tasks = [
             {"id": f"r{run_id}-task-quality", "title": "品質評価・改善ループ", "assignee": "QualityLoop", "done": False},
             {"id": f"r{run_id}-task-output", "title": "Markdown出力", "assignee": "System", "done": False},
@@ -315,7 +321,7 @@ class ResearchCoordinator:
                 "assignee": "Discussion",
                 "done": False,
             })
-        milestones = [
+        milestones: list[dict] = [
             {
                 "id": f"r{run_id}-milestone-planning",
                 "title": "計画フェーズ",
@@ -337,16 +343,66 @@ class ResearchCoordinator:
                     for i, spec in enumerate(specialists)
                 ],
             },
-            {
-                "id": f"r{run_id}-milestone-output",
-                "title": "出力フェーズ",
-                "tasks": output_tasks,
-            },
         ]
+        if style == "book_chapter":
+            if book_outline is not None:
+                sections = book_outline.all_sections()
+                writing_tasks = [
+                    {
+                        "id": f"r{run_id}-section-{sec.section_id}",
+                        "title": f"{sec.chapter_title} ＞ {sec.section_title}",
+                        "assignee": sec.specialist_hint or "Specialist",
+                        "done": False,
+                    }
+                    for sec in sections
+                ]
+            else:
+                writing_tasks = [
+                    {
+                        "id": f"r{run_id}-task-writing-pending",
+                        "title": "セクション分解中…",
+                        "assignee": "PM",
+                        "done": False,
+                    }
+                ]
+            milestones.append({
+                "id": f"r{run_id}-milestone-writing",
+                "title": "書籍執筆フェーズ",
+                "tasks": writing_tasks,
+            })
+        milestones.append({
+            "id": f"r{run_id}-milestone-output",
+            "title": "出力フェーズ",
+            "tasks": output_tasks,
+        })
+        return milestones
+
+    async def _push_wbs(self, topic: str, specialists: list[dict], run_id: int = 0, style: str = "") -> None:
+        if not self._ui or not hasattr(self._ui, "set_wbs"):
+            return
+        milestones = self._build_wbs_milestones(topic, specialists, run_id=run_id, style=style)
         try:
             await self._ui.set_wbs(milestones)
         except Exception as exc:
             logger.warning("_push_wbs failed: %s", exc)
+
+    async def _push_book_writing_milestone(
+        self,
+        topic: str,
+        specialists: list[dict],
+        outline: "BookOutline",
+        run_id: int,
+        style: str,
+    ) -> None:
+        if not self._ui or not hasattr(self._ui, "set_wbs"):
+            return
+        milestones = self._build_wbs_milestones(
+            topic, specialists, run_id=run_id, style=style, book_outline=outline
+        )
+        try:
+            await self._ui.set_wbs(milestones)
+        except Exception as exc:
+            logger.warning("_push_book_writing_milestone failed: %s", exc)
 
     async def _run_discussion(
         self,
@@ -390,74 +446,94 @@ class ResearchCoordinator:
         await self._log("running", f"{agent_name} が処理中...")
         timeout_sec = float(os.environ.get("RT_AGENT_TIMEOUT_SEC", "1800"))
         try:
-            async with asyncio.timeout(timeout_sec):
-                async for event in agent.run(
-                    message,
-                    workspace_dir=self._get_agent_workspace(),
-                    search_port=self._search_port,
-                ):
-                    events.append(event)
-                    match event.type:
-                        case "turn_start":
-                            turn_idx = event.data.get("turnIndex", "")
-                            await self._log("running", f"{agent_name} ターン {turn_idx} 開始")
-                        case "tool_execution_start":
-                            tool = event.data.get("toolName", "")
-                            args = event.data.get("args", {})
-                            pending_tool_args[tool] = args
-                            if tool == "web_search":
-                                q = args.get("query", "")
-                                await self._log("running", f"🔍 {agent_name}: web_search 「{q}」")
-                            elif tool == "web_fetch":
-                                url = args.get("url", "")
-                                await self._log("running", f"🌐 {agent_name}: web_fetch {url}")
-                            else:
-                                await self._log("running", f"⚙️ {agent_name}: {tool}")
-                        case "tool_execution_end":
-                            tool = event.data.get("toolName", "")
-                            is_error = event.data.get("isError", False)
-                            if is_error:
-                                await self._log("error", f"{agent_name}: {tool} エラー")
-                            else:
-                                await self._log("done", f"{agent_name}: {tool} 完了")
+            async with asyncio.timeout(timeout_sec) as _timeout_cm:
+                if self._ui is not None:
+                    _loop = asyncio.get_running_loop()
+                    _saved_remaining: list[float] = []
 
-                            # ゼロトラスト蓄積: 生ツール結果を即時保存
-                            if artifact_writer and tool in ("web_search", "web_fetch") and not is_error:
-                                start_args = pending_tool_args.get(tool, {})
-                                result_data = {**start_args, **(event.data.get("result") or {})}
-                                try:
-                                    call_index = sum(
-                                        1 for e in events
-                                        if e.type == "tool_execution_end"
-                                        and e.data.get("toolName") == tool
-                                    )
-                                    artifact_writer.write_raw_tool_result(
-                                        run_id=run_id,
-                                        specialist_name=agent_name,
-                                        tool_name=tool,
-                                        call_index=call_index,
-                                        result_data=result_data,
-                                    )
-                                except Exception as exc:
-                                    logger.warning("write_raw_tool_result failed: %s", exc)
-                        case "auto_retry_start":
-                            attempt = event.data.get("attempt", "")
-                            err = event.data.get("errorMessage", "")
-                            await self._log("running", f"⚠️ {agent_name}: リトライ中 (試行{attempt}) {err}")
-                        case "extension_error":
-                            err = event.data.get("error", "")
-                            await self._log("error", f"{agent_name}: Extension エラー: {err}")
-                        case "message_update":
-                            ame = event.data.get("assistantMessageEvent", {})
-                            if ame.get("type") == "text_delta":
-                                delta = ame.get("delta", "")
-                                if delta:
-                                    parts.append(delta)
-                                    if self._ui:
-                                        try:
-                                            await self._ui.stream_delta(agent_name, delta)
-                                        except Exception as exc:
-                                            logger.warning("stream_delta failed: %s", exc)
+                    def _pause_timeout() -> None:
+                        when = _timeout_cm.when()
+                        if when is not None:
+                            _saved_remaining.clear()
+                            _saved_remaining.append(max(0.0, when - _loop.time()))
+                            _timeout_cm.reschedule(None)
+
+                    def _resume_timeout() -> None:
+                        if _saved_remaining:
+                            _timeout_cm.reschedule(_loop.time() + _saved_remaining.pop())
+
+                    self._ui.set_approval_hooks(_pause_timeout, _resume_timeout)
+                try:
+                    async for event in agent.run(
+                        message,
+                        workspace_dir=self._get_agent_workspace(),
+                        search_port=self._search_port,
+                    ):
+                        events.append(event)
+                        match event.type:
+                            case "turn_start":
+                                turn_idx = event.data.get("turnIndex", "")
+                                await self._log("running", f"{agent_name} ターン {turn_idx} 開始")
+                            case "tool_execution_start":
+                                tool = event.data.get("toolName", "")
+                                args = event.data.get("args", {})
+                                pending_tool_args[tool] = args
+                                if tool == "web_search":
+                                    q = args.get("query", "")
+                                    await self._log("running", f"🔍 {agent_name}: web_search 「{q}」")
+                                elif tool == "web_fetch":
+                                    url = args.get("url", "")
+                                    await self._log("running", f"🌐 {agent_name}: web_fetch {url}")
+                                else:
+                                    await self._log("running", f"⚙️ {agent_name}: {tool}")
+                            case "tool_execution_end":
+                                tool = event.data.get("toolName", "")
+                                is_error = event.data.get("isError", False)
+                                if is_error:
+                                    await self._log("error", f"{agent_name}: {tool} エラー")
+                                else:
+                                    await self._log("done", f"{agent_name}: {tool} 完了")
+
+                                # ゼロトラスト蓄積: 生ツール結果を即時保存
+                                if artifact_writer and tool in ("web_search", "web_fetch") and not is_error:
+                                    start_args = pending_tool_args.get(tool, {})
+                                    result_data = {**start_args, **(event.data.get("result") or {})}
+                                    try:
+                                        call_index = sum(
+                                            1 for e in events
+                                            if e.type == "tool_execution_end"
+                                            and e.data.get("toolName") == tool
+                                        )
+                                        artifact_writer.write_raw_tool_result(
+                                            run_id=run_id,
+                                            specialist_name=agent_name,
+                                            tool_name=tool,
+                                            call_index=call_index,
+                                            result_data=result_data,
+                                        )
+                                    except Exception as exc:
+                                        logger.warning("write_raw_tool_result failed: %s", exc)
+                            case "auto_retry_start":
+                                attempt = event.data.get("attempt", "")
+                                err = event.data.get("errorMessage", "")
+                                await self._log("running", f"⚠️ {agent_name}: リトライ中 (試行{attempt}) {err}")
+                            case "extension_error":
+                                err = event.data.get("error", "")
+                                await self._log("error", f"{agent_name}: Extension エラー: {err}")
+                            case "message_update":
+                                ame = event.data.get("assistantMessageEvent", {})
+                                if ame.get("type") == "text_delta":
+                                    delta = ame.get("delta", "")
+                                    if delta:
+                                        parts.append(delta)
+                                        if self._ui:
+                                            try:
+                                                await self._ui.stream_delta(agent_name, delta)
+                                            except Exception as exc:
+                                                logger.warning("stream_delta failed: %s", exc)
+                finally:
+                    if self._ui is not None:
+                        self._ui.set_approval_hooks(None, None)
         except TimeoutError:
             logger.error(
                 "_stream_agent_output: agent=%s timed out after %.0fs",
@@ -558,54 +634,110 @@ class ResearchCoordinator:
         reference_content: str = "",
         run_id: int = 0,
         session_id: str = "",
+        resume_from: RunProgress | None = None,
+        resume_writer: "ArtifactWriter | None" = None,
     ) -> ResearchResult:
-        pm_output = await self._stream_agent_output(
-            self._pm_agent,
-            f"次の調査プロジェクトのWBSと品質目標を定義してください。\n\nテーマ: {topic}\n深度: {request.depth}",
-            "PM",
-        )
-        await self._mark_wbs_done(f"r{run_id}-task-pm")
+        if resume_from:
+            specialists = [
+                {"name": sp.name, "expertise": sp.expertise}
+                for sp in resume_from.all_specialists
+            ]
+            factory = DynamicAgentFactory()
+            for spec in specialists:
+                factory.create_specialist(
+                    name=spec["name"],
+                    expertise=spec["expertise"],
+                    system_prompt=f"あなたは{spec['expertise']}の専門家です。{topic}について調査します。",
+                    locales=request.locales,
+                )
+            await self._push_wbs(topic, specialists, run_id=run_id, style=request.style)
+            artifact_writer: ArtifactWriter = resume_writer or self._make_artifact_writer(session_id)
+            progress = resume_from
+        else:
+            pm_output = await self._stream_agent_output(
+                self._pm_agent,
+                f"次の調査プロジェクトのWBSと品質目標を定義してください。\n\nテーマ: {topic}\n深度: {request.depth}",
+                "PM",
+            )
+            await self._mark_wbs_done(f"r{run_id}-task-pm")
 
-        example = '[{"name": "経済アナリスト", "expertise": "経済・金融"}]'
-        team_spec = await self._stream_agent_output(
-            self._team_builder,
-            f"次のテーマを調査するための専門家チームを3名以内で定義してください。各専門家の名前と専門分野をJSON配列で返してください。\n\nテーマ: {topic}\n\n例: {example}",
-            "TeamBuilder",
-        )
-        await self._mark_wbs_done(f"r{run_id}-task-team")
-        await self._log("done", "専門家チームを構成しました。")
+            example = '[{"name": "経済アナリスト", "expertise": "経済・金融"}]'
+            team_spec = await self._stream_agent_output(
+                self._team_builder,
+                f"次のテーマを調査するための専門家チームを3名以内で定義してください。各専門家の名前と専門分野をJSON配列で返してください。\n\nテーマ: {topic}\n\n例: {example}",
+                "TeamBuilder",
+            )
+            await self._mark_wbs_done(f"r{run_id}-task-team")
+            await self._log("done", "専門家チームを構成しました。")
 
-        specialists = self._parse_team_spec(team_spec, topic)
-        factory = DynamicAgentFactory()
+            specialists = self._parse_team_spec(team_spec, topic)
+            factory = DynamicAgentFactory()
 
-        for spec in specialists:
-            factory.create_specialist(
-                name=spec["name"],
-                expertise=spec["expertise"],
-                system_prompt=f"あなたは{spec['expertise']}の専門家です。{topic}について調査します。",
+            for spec in specialists:
+                factory.create_specialist(
+                    name=spec["name"],
+                    expertise=spec["expertise"],
+                    system_prompt=f"あなたは{spec['expertise']}の専門家です。{topic}について調査します。",
+                    locales=request.locales,
+                )
+
+            await self._push_wbs(topic, specialists, run_id=run_id, style=request.style)
+
+            if not await self._wbs_approval_loop(
+                pm_output=pm_output,
+                specialists=specialists,
+                request=request,
+                topic=topic,
+                run_id=run_id,
+            ):
+                raise ResearchCancelledError
+
+            artifact_writer = self._make_artifact_writer(session_id)
+            try:
+                wbs_path = artifact_writer.write_wbs(run_id, topic, specialists)
+                await self._notify(
+                    "CSM",
+                    f"📋 WBS を保存しました:\n`{wbs_path}`",
+                )
+            except Exception as exc:
+                logger.warning("write_wbs failed: %s", exc)
+                wbs_path = ""
+
+            progress = RunProgress(
+                run_id=run_id,
+                topic=topic,
+                style=request.style,
+                depth=request.depth,
                 locales=request.locales,
+                all_specialists=[
+                    SpecialistProgress(name=s["name"], expertise=s["expertise"])
+                    for s in specialists
+                ],
+                wbs_artifact_path=wbs_path,
+                created_at=datetime.now().isoformat(),
             )
+            try:
+                artifact_writer.write_run_progress(progress)
+            except Exception as exc:
+                logger.warning("write_run_progress failed: %s", exc)
 
-        await self._push_wbs(topic, specialists, run_id=run_id, style=request.style)
+        pre_completed: dict[str, str] = {}
+        if resume_from:
+            for sp in resume_from.completed_specialists:
+                if sp.artifact_path:
+                    try:
+                        pre_completed[sp.name] = Path(sp.artifact_path).read_text(encoding="utf-8")
+                    except Exception:
+                        pre_completed[sp.name] = ""
+                else:
+                    pre_completed[sp.name] = ""
 
-        if not await self._wbs_approval_loop(
-            pm_output=pm_output,
-            specialists=specialists,
-            request=request,
-            topic=topic,
-            run_id=run_id,
-        ):
-            raise ResearchCancelledError
-
-        artifact_writer = self._make_artifact_writer(session_id)
-        try:
-            wbs_path = artifact_writer.write_wbs(run_id, topic, specialists)
-            await self._notify(
-                "CSM",
-                f"📋 WBS を保存しました:\n`{wbs_path}`",
-            )
-        except Exception as exc:
-            logger.warning("write_wbs failed: %s", exc)
+        def _on_specialist_done(name: str, draft_path: str) -> None:
+            progress.mark_specialist_done(name, draft_path)
+            try:
+                artifact_writer.write_run_progress(progress)
+            except Exception as exc:
+                logger.warning("write_run_progress failed: %s", exc)
 
         iterations_done = 0
 
@@ -646,6 +778,8 @@ class ResearchCoordinator:
             run_id=run_id,
             artifact_writer=artifact_writer,
             style=request.style,
+            pre_completed=pre_completed,
+            on_specialist_done=_on_specialist_done,
         )
         if isinstance(specialist_result, tuple):
             combined_content, specialist_artifact_paths = specialist_result
@@ -653,17 +787,25 @@ class ResearchCoordinator:
             combined_content = specialist_result
             specialist_artifact_paths = {}
         discussion_artifact_path: str | None = None
+        book_section_paths: dict[str, dict] = {}
 
         if request.style == "book_chapter":
             from research_team.orchestrator.book_pipeline import BookChapterPipeline
             outline = await self._decompose_book_sections(topic, combined_content, request.depth)
             if outline and outline.all_sections():
                 await self._notify("CSM", f"📚 セクション構造を設計しました（{len(outline.all_sections())}節）")
+                await self._push_book_writing_milestone(
+                    topic=topic,
+                    specialists=specialists,
+                    outline=outline,
+                    run_id=run_id,
+                    style=request.style,
+                )
                 pipeline = BookChapterPipeline(
                     stream_fn=self._stream_agent_output,
                     specialists=specialists,
                 )
-                book_content = await pipeline.run(
+                book_content, book_section_paths = await pipeline.run(
                     topic=topic,
                     outline=outline,
                     raw_data=combined_content,
@@ -671,6 +813,7 @@ class ResearchCoordinator:
                     artifact_writer=artifact_writer,
                     run_id=run_id,
                     notify_fn=self._notify,
+                    mark_done_fn=lambda sid: self._mark_wbs_done(f"r{run_id}-section-{sid}"),
                 )
                 if book_content:
                     combined_content = book_content
@@ -777,11 +920,17 @@ class ResearchCoordinator:
                 artifact_paths=specialist_artifact_paths,
                 discussion_artifact_path=discussion_artifact_path,
                 report_path=output_path,
+                book_section_paths=book_section_paths,
             )
         except Exception as exc:
             logger.warning("write_run_manifest failed: %s", exc)
         await self._mark_wbs_done(f"r{run_id}-task-quality")
         await self._mark_wbs_done(f"r{run_id}-task-output")
+
+        try:
+            artifact_writer.clear_run_progress()
+        except Exception as exc:
+            logger.warning("clear_run_progress failed: %s", exc)
 
         await self._notify(
             "CSM",
@@ -859,10 +1008,19 @@ class ResearchCoordinator:
         run_id: int = 0,
         artifact_writer: ArtifactWriter | None = None,
         style: str = "research_report",
+        pre_completed: dict[str, str] | None = None,
+        on_specialist_done: "Callable[[str, str], None] | None" = None,
     ) -> tuple[str, dict[str, str]]:
         sections: list[str] = []
         artifact_paths: dict[str, str] = {}
         for i, (name, agent) in enumerate(factory.agents.items()):
+            if pre_completed and name in pre_completed:
+                section = pre_completed[name]
+                if section:
+                    sections.append(f"## {name}\n\n{section}")
+                await self._mark_wbs_done(f"r{run_id}-task-specialist-{i}")
+                continue
+
             task_message = _build_research_task(topic, feedback, name, reference_content, style=style)
             section = await self._stream_agent_output(
                 agent,
@@ -882,6 +1040,8 @@ class ResearchCoordinator:
                         "CSM",
                         f"📄 {name} の調査結果を保存しました:\n`{draft_path}`",
                     )
+                    if on_specialist_done is not None:
+                        on_specialist_done(name, draft_path)
                 except Exception as exc:
                     logger.warning("write_specialist_draft failed: %s", exc)
         return "\n\n".join(sections), artifact_paths
@@ -1025,6 +1185,65 @@ class ResearchCoordinator:
             await self.run(request, run_id=0, session_id=session_id)
             return
 
+        resume_data = self._detect_resumable_session()
+        if resume_data:
+            resume_progress, resume_writer = resume_data
+            completed_names = [s.name for s in resume_progress.completed_specialists]
+            pending_names = [s.name for s in resume_progress.pending_specialists]
+            status_lines = [""]
+            for sp in resume_progress.all_specialists:
+                mark = "✅" if sp.completed else "❌"
+                status_lines.append(f"  {mark} {sp.name}（{sp.expertise}）")
+            status_lines.append("")
+            resume_prompt = (
+                f"前回の「{resume_progress.topic}」の調査が未完了です。\n"
+                f"\n進捗：{''.join(status_lines)}\n"
+                f"続きから再開しますか？（「はい」で再開 / 「いいえ」で最初から）"
+            )
+            await self._ui.append_agent_message("CSM", resume_prompt)
+            user_answer = await self._ui.wait_for_user_message()
+            if _is_affirmative(user_answer):
+                session.session_id = resume_writer._dir.parent.name
+                session.run_count += 1
+                run_id = resume_progress.run_id
+                request = ResearchRequest(
+                    topic=resume_progress.topic,
+                    depth=resume_progress.depth,
+                    output_format=output_format,
+                    style=resume_progress.style,
+                    locales=resume_progress.locales,
+                )
+                await self._start_search_server()
+                try:
+                    result = await self._run_research(
+                        resume_progress.topic,
+                        request,
+                        reference_content="",
+                        run_id=run_id,
+                        session_id=session.session_id,
+                        resume_from=resume_progress,
+                        resume_writer=resume_writer,
+                    )
+                    session.current_topic = resume_progress.topic
+                    session.last_report_path = result.output_path
+                    session.last_run_id = run_id
+                    await self._log("done", f"完了: {result.output_path}")
+                except ResearchCancelledError:
+                    await self._ui.append_agent_message("CSM", "承知しました。調査をキャンセルしました。")
+                except Exception as exc:
+                    err_msg = f"エラーが発生しました: {exc}"
+                    tb = traceback.format_exc()
+                    logger.error("run_interactive (resume) error:\n%s", tb)
+                    await self._notify("System", err_msg)
+                    await self._log("running", err_msg)
+                    await self._ui.append_log("running", tb)
+                    raise
+                finally:
+                    await self._stop_search_server()
+            else:
+                resume_writer.clear_run_progress()
+                await self._notify("CSM", "前回の進捗を破棄しました。新規調査を開始します。")
+
         while True:
             await self._ui.append_agent_message(
                 "CSM",
@@ -1080,6 +1299,30 @@ class ResearchCoordinator:
                 await self._log("running", err_msg)
                 await self._ui.append_log("running", tb)
                 raise
+
+    def _detect_resumable_session(self) -> tuple[RunProgress, ArtifactWriter] | None:
+        active_id = self._project_manager.get_active_id()
+        if active_id:
+            artifacts_dir = self._project_manager.project_files_dir(active_id) / "artifacts"
+            writer = ArtifactWriter(artifacts_dir)
+            progress = writer.load_run_progress()
+            if progress:
+                return progress, writer
+
+        sessions_dir = Path(self._workspace_dir) / "sessions"
+        if sessions_dir.exists():
+            candidates = sorted(
+                sessions_dir.glob("*/artifacts/run_progress.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                writer = ArtifactWriter(candidates[0].parent)
+                progress = writer.load_run_progress()
+                if progress:
+                    return progress, writer
+
+        return None
 
     @staticmethod
     def _make_session_id(topic: str) -> str:

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from urllib.parse import urlparse
@@ -13,7 +14,6 @@ def _normalize_query(query: str) -> str:
 
 
 def _extract_domain(url: str) -> str:
-    """URL からドメイン（www. 除去済み）を返す。パース失敗時は空文字列。"""
     try:
         return urlparse(url).netloc.lower().removeprefix("www.")
     except Exception:
@@ -36,6 +36,9 @@ class SearchServer:
         self._fetch_cache: dict[str, dict] = {}
         self._domain_fetch_counts: dict[str, int] = {}
 
+        self._pending_searches: dict[str, asyncio.Task[list[dict]]] = {}
+        self._pending_fetches: dict[str, asyncio.Task[dict]] = {}
+
     async def start(self) -> int:
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
@@ -48,6 +51,13 @@ class SearchServer:
         if self._runner:
             await self._runner.cleanup()
 
+    async def _run_search(self, key: str, query: str, max_results: int) -> list[dict]:
+        results = await self._engine.search(query, max_results=max_results)
+        serialized = [r.model_dump() for r in results]
+        self._search_cache[key] = serialized
+        self._pending_searches.pop(key, None)
+        return serialized
+
     async def _handle_search(self, request: web.Request) -> web.Response:
         query = request.query.get("q", "")
         max_results = int(request.query.get("max", "5"))
@@ -57,14 +67,28 @@ class SearchServer:
             logger.debug("SearchServer: search cache hit for query=%r", query)
             return web.json_response(self._search_cache[key])
 
+        if key not in self._pending_searches:
+            task: asyncio.Task[list[dict]] = asyncio.create_task(
+                self._run_search(key, query, max_results)
+            )
+            self._pending_searches[key] = task
+
         try:
-            results = await self._engine.search(query, max_results=max_results)
-            serialized = [r.model_dump() for r in results]
-            self._search_cache[key] = serialized
+            serialized = await asyncio.shield(self._pending_searches[key])
             return web.json_response(serialized)
-        except Exception as exc:
+        except asyncio.CancelledError:
+            raise
+        except Exception:
             logger.exception("SearchServer._handle_search error: query=%r", query)
-            return web.json_response({"error": str(exc)}, status=500)
+            self._pending_searches.pop(key, None)
+            return web.json_response({"error": "search failed"}, status=500)
+
+    async def _run_fetch(self, url: str) -> dict:
+        result = await self._engine.fetch(url)
+        serialized = result.model_dump()
+        self._fetch_cache[url] = serialized
+        self._pending_fetches.pop(url, None)
+        return serialized
 
     async def _handle_fetch(self, request: web.Request) -> web.Response:
         url = request.query.get("url", "")
@@ -91,10 +115,16 @@ class SearchServer:
                 return web.json_response(stub)
             self._domain_fetch_counts[domain] = count + 1
 
+        if url not in self._pending_fetches:
+            fetch_task: asyncio.Task[dict] = asyncio.create_task(self._run_fetch(url))
+            self._pending_fetches[url] = fetch_task
+
         try:
-            result = await self._engine.fetch(url)
-            self._fetch_cache[url] = result.model_dump()
-            return web.json_response(self._fetch_cache[url])
-        except Exception as exc:
+            serialized = await asyncio.shield(self._pending_fetches[url])
+            return web.json_response(serialized)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
             logger.exception("SearchServer._handle_fetch error: url=%r", url)
-            return web.json_response({"error": str(exc)}, status=500)
+            self._pending_fetches.pop(url, None)
+            return web.json_response({"error": "fetch failed"}, status=500)

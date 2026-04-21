@@ -13,9 +13,10 @@ export default function webSearchExtension(pi: ExtensionAPI) {
 			query: Type.String({ description: "Search query" }),
 			max_results: Type.Optional(Type.Number({ description: "Max results to return (default 5)" })),
 		}),
-		async execute(_toolCallId, params, signal) {
+		async execute(_toolCallId, params, _signal) {
 			const url = `${BASE_URL}/search?q=${encodeURIComponent(params.query)}&max=${params.max_results ?? 5}`;
-			const resp = await fetch(url, { signal: signal ?? undefined });
+			const humanApprovalTimeoutMs = 7_200_000;
+			const resp = await fetch(url, { signal: AbortSignal.timeout(humanApprovalTimeoutMs) });
 			const data = await resp.json();
 			return {
 				content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
@@ -32,9 +33,10 @@ export default function webSearchExtension(pi: ExtensionAPI) {
 		parameters: Type.Object({
 			url: Type.String({ description: "URL to fetch" }),
 		}),
-		async execute(_toolCallId, params, signal) {
+		async execute(_toolCallId, params, _signal) {
 			const url = `${BASE_URL}/fetch?url=${encodeURIComponent(params.url)}`;
-			const resp = await fetch(url, { signal: signal ?? undefined });
+			const humanApprovalTimeoutMs = 7_200_000;
+			const resp = await fetch(url, { signal: AbortSignal.timeout(humanApprovalTimeoutMs) });
 			const data = await resp.json();
 			return {
 				content: [{ type: "text", text: JSON.stringify(data, null, 2) }],

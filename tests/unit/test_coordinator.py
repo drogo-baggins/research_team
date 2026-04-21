@@ -730,3 +730,359 @@ async def test_run_interactive_regenerate_manifest_missing_falls_back_to_run(tmp
     assert state.last_report_path == str(tmp_path / "normal.md")
     notify_messages = [message for agent, message in notify_calls if agent == "CSM"]
     assert any("前回の調査データが見つかりません" in msg for msg in notify_messages)
+
+
+def test_detect_resumable_session_finds_progress_in_sessions(tmp_path):
+    from research_team.output.artifact_writer import ArtifactWriter
+    from research_team.output.run_progress import RunProgress, SpecialistProgress
+
+    session_id = "20260421_100000_テスト"
+    writer = ArtifactWriter.for_session(tmp_path, session_id)
+    progress = RunProgress(
+        run_id=1,
+        topic="テスト調査",
+        style="research_report",
+        depth="standard",
+        locales=["ja"],
+        all_specialists=[SpecialistProgress(name="専門家A", expertise="分野A")],
+        wbs_artifact_path="",
+        created_at="2026-04-21T10:00:00",
+    )
+    writer.write_run_progress(progress)
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    coord._project_manager = MagicMock()
+    coord._project_manager.get_active_id.return_value = None
+
+    result = coord._detect_resumable_session()
+    assert result is not None
+    loaded_progress, loaded_writer = result
+    assert loaded_progress.topic == "テスト調査"
+
+
+def test_detect_resumable_session_returns_none_when_no_progress(tmp_path):
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    coord._project_manager = MagicMock()
+    coord._project_manager.get_active_id.return_value = None
+
+    result = coord._detect_resumable_session()
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_run_specialist_pass_skips_pre_completed():
+    from unittest.mock import AsyncMock, MagicMock
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._stream_agent_output = AsyncMock(return_value="新規調査結果")
+    coord._mark_wbs_done = AsyncMock()
+    coord._notify = AsyncMock()
+
+    agent_a = MagicMock()
+    agent_b = MagicMock()
+    factory = MagicMock()
+    factory.agents = {"完了済み": agent_a, "未完了": agent_b}
+
+    pre_completed = {"完了済み": "キャッシュコンテンツ"}
+    combined, paths = await coord._run_specialist_pass(
+        factory=factory,
+        topic="テスト",
+        feedback=None,
+        pre_completed=pre_completed,
+    )
+
+    assert "キャッシュコンテンツ" in combined
+    assert "新規調査結果" in combined
+    coord._stream_agent_output.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_specialist_pass_calls_on_specialist_done():
+    from unittest.mock import AsyncMock, MagicMock
+    from pathlib import Path
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._stream_agent_output = AsyncMock(return_value="調査結果")
+    coord._mark_wbs_done = AsyncMock()
+    coord._notify = AsyncMock()
+
+    agent = MagicMock()
+    factory = MagicMock()
+    factory.agents = {"専門家": agent}
+
+    artifact_writer = MagicMock()
+    artifact_writer.write_specialist_draft = MagicMock(return_value="/some/path.md")
+
+    done_calls: list[tuple[str, str]] = []
+
+    def on_done(name: str, path: str) -> None:
+        done_calls.append((name, path))
+
+    await coord._run_specialist_pass(
+        factory=factory,
+        topic="テスト",
+        feedback=None,
+        artifact_writer=artifact_writer,
+        on_specialist_done=on_done,
+    )
+
+    assert len(done_calls) == 1
+    assert done_calls[0] == ("専門家", "/some/path.md")
+
+
+@pytest.mark.asyncio
+async def test_run_interactive_resume_yes_calls_run_research_with_resume_from(tmp_path):
+    from research_team.output.artifact_writer import ArtifactWriter
+    from research_team.output.run_progress import RunProgress, SpecialistProgress
+
+    session_id = "20260421_100000_テスト"
+    writer = ArtifactWriter.for_session(tmp_path, session_id)
+    progress = RunProgress(
+        run_id=2,
+        topic="再開テーマ",
+        style="research_report",
+        depth="standard",
+        locales=["ja"],
+        all_specialists=[
+            SpecialistProgress(name="専門家A", expertise="分野A", artifact_path="", completed=True),
+            SpecialistProgress(name="専門家B", expertise="分野B"),
+        ],
+        wbs_artifact_path="",
+        created_at="2026-04-21T10:00:00",
+    )
+    writer.write_run_progress(progress)
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    coord._detect_resumable_session = MagicMock(return_value=(progress, writer))
+    coord._start_search_server = AsyncMock()
+    coord._stop_search_server = AsyncMock()
+    coord._log = AsyncMock()
+    coord._notify = AsyncMock()
+
+    run_research_calls: list[dict] = []
+
+    async def fake_run_research(topic, request, reference_content="", run_id=0, session_id="", resume_from=None, resume_writer=None):
+        run_research_calls.append({"topic": topic, "resume_from": resume_from})
+        return ResearchResult(
+            content="再開調査結果",
+            output_path=str(tmp_path / "report.md"),
+            quality_score=1.0,
+            iterations=1,
+        )
+
+    coord._run_research = fake_run_research
+
+    user_inputs = iter(["はい", "終了"])
+    mock_ui = MagicMock()
+    mock_ui.append_agent_message = AsyncMock()
+    mock_ui.append_log = AsyncMock()
+    mock_ui.wait_for_user_message = AsyncMock(side_effect=lambda: next(user_inputs))
+    coord._ui = mock_ui
+
+    coord.run = AsyncMock(
+        return_value=ResearchResult(content="", output_path="", quality_score=1.0, iterations=0)
+    )
+
+    await coord.run_interactive()
+
+    assert len(run_research_calls) == 1
+    assert run_research_calls[0]["topic"] == "再開テーマ"
+    assert run_research_calls[0]["resume_from"] is progress
+
+
+@pytest.mark.asyncio
+async def test_run_interactive_resume_no_clears_progress(tmp_path):
+    from research_team.output.run_progress import RunProgress, SpecialistProgress
+
+    progress = RunProgress(
+        run_id=1,
+        topic="破棄テーマ",
+        style="research_report",
+        depth="standard",
+        locales=["ja"],
+        all_specialists=[SpecialistProgress(name="専門家A", expertise="分野A")],
+        wbs_artifact_path="",
+        created_at="2026-04-21T10:00:00",
+    )
+    mock_writer = MagicMock()
+    mock_writer.clear_run_progress = MagicMock()
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    coord._detect_resumable_session = MagicMock(return_value=(progress, mock_writer))
+    coord._log = AsyncMock()
+    coord._notify = AsyncMock()
+
+    user_inputs = iter(["いいえ", "終了"])
+    mock_ui = MagicMock()
+    mock_ui.append_agent_message = AsyncMock()
+    mock_ui.append_log = AsyncMock()
+    mock_ui.wait_for_user_message = AsyncMock(side_effect=lambda: next(user_inputs))
+    coord._ui = mock_ui
+
+    coord.run = AsyncMock(
+        return_value=ResearchResult(content="", output_path="", quality_score=1.0, iterations=0)
+    )
+
+    await coord.run_interactive()
+
+    mock_writer.clear_run_progress.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_research_resume_reads_completed_specialist_file(tmp_path):
+    from research_team.output.artifact_writer import ArtifactWriter
+    from research_team.output.run_progress import RunProgress, SpecialistProgress
+
+    artifact_path = tmp_path / "specialist_A.md"
+    artifact_path.write_text("# 専門家Aの調査\n\nキャッシュ内容です。", encoding="utf-8")
+
+    progress = RunProgress(
+        run_id=1,
+        topic="テスト調査",
+        style="research_report",
+        depth="standard",
+        locales=["ja"],
+        all_specialists=[
+            SpecialistProgress(name="専門家A", expertise="分野A", artifact_path=str(artifact_path), completed=True),
+            SpecialistProgress(name="専門家B", expertise="分野B"),
+        ],
+        wbs_artifact_path="",
+        created_at="2026-04-21T10:00:00",
+    )
+    resume_writer = ArtifactWriter(tmp_path / "artifacts")
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    coord._push_wbs = AsyncMock()
+    coord._notify = AsyncMock()
+    coord._log = AsyncMock()
+    coord._mark_wbs_done = AsyncMock()
+    coord._set_agent_status = AsyncMock()
+    coord._ui = None
+
+    pass_calls: list[dict] = []
+
+    async def fake_specialist_pass(factory, topic, feedback, reference_content="", run_id=0, artifact_writer=None, style="research_report", pre_completed=None, on_specialist_done=None):
+        pass_calls.append({"pre_completed": pre_completed})
+        return ("結果テキスト", {})
+
+    coord._run_specialist_pass = fake_specialist_pass
+
+    from research_team.orchestrator.quality_loop import QualityFeedback
+
+    with patch("research_team.orchestrator.coordinator.QualityLoop") as mock_ql_cls:
+        mock_ql_instance = MagicMock()
+        mock_ql_instance.run = AsyncMock(return_value=QualityFeedback(passed=True, score=1.0))
+        mock_ql_cls.return_value = mock_ql_instance
+        with patch("research_team.orchestrator.coordinator.MarkdownOutput") as mock_md:
+            mock_md.return_value.save = MagicMock(return_value=str(tmp_path / "report.md"))
+            with patch.object(resume_writer, "write_run_manifest", return_value=""):
+                with patch.object(resume_writer, "clear_run_progress"):
+                    request = ResearchRequest(topic="テスト調査", depth="standard", style="research_report", locales=["ja"])
+                    await coord._run_research(
+                        "テスト調査",
+                        request,
+                        run_id=1,
+                        resume_from=progress,
+                        resume_writer=resume_writer,
+                    )
+
+    assert len(pass_calls) == 1
+    pre = pass_calls[0]["pre_completed"]
+    assert "専門家A" in pre
+    assert "キャッシュ内容です。" in pre["専門家A"]
+
+
+@pytest.mark.asyncio
+async def test_run_research_resume_handles_missing_artifact_files(tmp_path):
+    from research_team.output.artifact_writer import ArtifactWriter
+    from research_team.output.run_progress import RunProgress, SpecialistProgress
+
+    progress = RunProgress(
+        run_id=1,
+        topic="テスト調査",
+        style="research_report",
+        depth="standard",
+        locales=["ja"],
+        all_specialists=[
+            SpecialistProgress(name="空パス", expertise="分野A", artifact_path="", completed=True),
+            SpecialistProgress(name="存在しないファイル", expertise="分野B", artifact_path="/nonexistent/path.md", completed=True),
+            SpecialistProgress(name="未完了", expertise="分野C"),
+        ],
+        wbs_artifact_path="",
+        created_at="2026-04-21T10:00:00",
+    )
+    resume_writer = ArtifactWriter(tmp_path / "artifacts")
+
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    coord._push_wbs = AsyncMock()
+    coord._notify = AsyncMock()
+    coord._log = AsyncMock()
+    coord._mark_wbs_done = AsyncMock()
+    coord._set_agent_status = AsyncMock()
+    coord._ui = None
+
+    pass_calls: list[dict] = []
+
+    async def fake_specialist_pass(factory, topic, feedback, reference_content="", run_id=0, artifact_writer=None, style="research_report", pre_completed=None, on_specialist_done=None):
+        pass_calls.append({"pre_completed": pre_completed})
+        return ("", {})
+
+    coord._run_specialist_pass = fake_specialist_pass
+
+    from research_team.orchestrator.quality_loop import QualityFeedback
+
+    with patch("research_team.orchestrator.coordinator.QualityLoop") as mock_ql_cls:
+        mock_ql_instance = MagicMock()
+        mock_ql_instance.run = AsyncMock(return_value=QualityFeedback(passed=True, score=1.0))
+        mock_ql_cls.return_value = mock_ql_instance
+        with patch("research_team.orchestrator.coordinator.MarkdownOutput") as mock_md:
+            mock_md.return_value.save = MagicMock(return_value=str(tmp_path / "report.md"))
+            with patch.object(resume_writer, "write_run_manifest", return_value=""):
+                with patch.object(resume_writer, "clear_run_progress"):
+                    request = ResearchRequest(topic="テスト調査", depth="standard", style="research_report", locales=["ja"])
+                    await coord._run_research(
+                        "テスト調査",
+                        request,
+                        run_id=1,
+                        resume_from=progress,
+                        resume_writer=resume_writer,
+                    )
+
+    assert len(pass_calls) == 1
+    pre = pass_calls[0]["pre_completed"]
+    assert pre["空パス"] == ""
+    assert pre["存在しないファイル"] == ""
+
+
+@pytest.mark.asyncio
+async def test_run_specialist_pass_all_pre_completed_skips_all_agents():
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._stream_agent_output = AsyncMock(return_value="これは呼ばれてはいけない")
+    coord._mark_wbs_done = AsyncMock()
+    coord._notify = AsyncMock()
+
+    agent_a = MagicMock()
+    agent_b = MagicMock()
+    agent_c = MagicMock()
+    factory = MagicMock()
+    factory.agents = {"専門家A": agent_a, "専門家B": agent_b, "専門家C": agent_c}
+
+    pre_completed = {
+        "専門家A": "Aのキャッシュ内容",
+        "専門家B": "Bのキャッシュ内容",
+        "専門家C": "Cのキャッシュ内容",
+    }
+
+    combined, paths = await coord._run_specialist_pass(
+        factory=factory,
+        topic="テスト",
+        feedback=None,
+        pre_completed=pre_completed,
+    )
+
+    coord._stream_agent_output.assert_not_awaited()
+    assert "Aのキャッシュ内容" in combined
+    assert "Bのキャッシュ内容" in combined
+    assert "Cのキャッシュ内容" in combined

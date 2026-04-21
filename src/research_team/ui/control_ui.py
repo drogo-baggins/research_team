@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from playwright.async_api import Browser, BrowserContext, Page
 
@@ -22,6 +23,16 @@ class ControlUI:
         self._closed_event: asyncio.Event = asyncio.Event()
         self._wbs_approval_event: asyncio.Event = asyncio.Event()
         self._wbs_approval_result: dict | None = None
+        self._on_approval_start: Callable[[], None] | None = None
+        self._on_approval_end: Callable[[], None] | None = None
+
+    def set_approval_hooks(
+        self,
+        on_start: Callable[[], None] | None,
+        on_end: Callable[[], None] | None,
+    ) -> None:
+        self._on_approval_start = on_start
+        self._on_approval_end = on_end
 
     @property
     def closed(self) -> bool:
@@ -187,7 +198,11 @@ class ControlUI:
         else:
             logger.warning("wait_for_capture: page is NOT alive, skipping evaluate")
             self._approval_event.set()
+        if self._on_approval_start:
+            self._on_approval_start()
         await self._approval_event.wait()
+        if self._on_approval_end:
+            self._on_approval_end()
         self._pending_approval_url = None
         logger.warning("wait_for_capture: event fired, result=%s", self._approval_result)
         return self._approval_result

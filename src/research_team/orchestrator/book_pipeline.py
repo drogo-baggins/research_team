@@ -117,10 +117,12 @@ class BookChapterPipeline:
         artifact_writer: Any | None = None,
         run_id: int = 0,
         notify_fn: Callable[..., Awaitable[None]] | None = None,
-    ) -> str:
+        mark_done_fn: Callable[[str], Awaitable[None]] | None = None,
+    ) -> tuple[str, dict[str, dict]]:
         sections = outline.all_sections()
         written: list[str] = []
         previous_summary = ""
+        section_paths: dict[str, dict] = {}
 
         for section in sections:
             agent_name, agent = self._pick_agent(section, agents)
@@ -136,19 +138,29 @@ class BookChapterPipeline:
                 previous_summary += f"\n- {section.section_title}: {text[:300]}..."
                 if artifact_writer:
                     try:
-                        artifact_writer.write_book_section(
+                        artifact_path = artifact_writer.write_book_section(
                             run_id=run_id,
                             section_id=section.section_id,
                             chapter_title=section.chapter_title,
                             section_title=section.section_title,
                             content=text,
                         )
+                        section_paths[section.section_id] = {
+                            "chapter_title": section.chapter_title,
+                            "section_title": section.section_title,
+                            "artifact_path": artifact_path,
+                        }
                     except Exception as exc:
                         logger.warning("write_book_section failed: %s", exc)
+                if mark_done_fn:
+                    try:
+                        await mark_done_fn(section.section_id)
+                    except Exception as exc:
+                        logger.warning("mark_done_fn failed: %s", exc)
                 if notify_fn:
                     await notify_fn(
                         "CSM",
                         f"📝 {section.section_id} 「{section.section_title}」執筆完了",
                     )
 
-        return "\n\n".join(written)
+        return "\n\n".join(written), section_paths

@@ -16,6 +16,7 @@
 - **多言語検索** — ロケール設定により日本語・中国語・英語等ネイティブクエリで検索
 - **プロジェクト管理** — 複数テーマをプロジェクトとして管理し、ワークスペースを分離
 - **書籍スタイル出力** — `--style book_chapter` で章・節構成の長文レポートを生成（オプション）
+- **中断・再開** — 調査を途中で中断しても、次回起動時に未完了セッションを検出して続きから再開できる
 
 ---
 
@@ -166,6 +167,7 @@ research-team start [OPTIONS]
 | オプション | 選択肢 | デフォルト | 説明 |
 |-----------|--------|-----------|------|
 | `--depth` | `quick` / `standard` / `deep` | `standard` | 調査の深さ |
+| `--style` | `research_report` / `executive_memo` / `magazine_column` / `book_chapter` | `research_report` | 出力スタイル |
 | `--search-mode` | `human` / `tavily` | 環境変数 `SEARCH_MODE` | 検索エンジンの切り替え |
 | `--workspace` | パス文字列 | `./workspace` | レポートの出力先ディレクトリ |
 | `--output-format` | `markdown` | `markdown` | 出力形式 |
@@ -181,6 +183,7 @@ research-team start [OPTIONS]
 ### 操作の流れ
 
 1. **起動** — ブラウザに Control Panel が表示される
+   - 未完了の調査セッションがある場合、CSM から再開の確認が表示される（「はい」で続きから再開、「いいえ」で最初から）
 2. **テーマ入力** — 左ペインのチャット欄に調査テーマを入力して送信
 3. **確認** — CSM からの確認メッセージに「はい」と返答して調査開始
 4. **承認バナー対応**（human モードのみ） — 調査員がページを取得するたびに右ペインにバナーが表示される
@@ -191,17 +194,65 @@ research-team start [OPTIONS]
 
 ### 出力ファイル
 
-調査完了後、`workspace/` ディレクトリ（またはアクティブプロジェクトの配下）に以下が生成されます：
+調査完了後、`workspace/` ディレクトリ（またはアクティブプロジェクトの配下）に以下が生成されます。
+
+**共通ディレクトリ構造:**
 
 ```
 workspace/
 └── sessions/
     └── 20260420_120000_テーマ名/
         └── artifacts/
-            ├── wbs_run1_20260420.md          # WBS・品質目標
-            ├── agent_briefing_run1_20260420.md  # チーム編成
-            ├── specialist_<name>_run1_20260420.md  # 専門家ごとの調査データ
-            └── report_<topic>_20260420.md    # 最終レポート
+            ├── wbs_run<N>_<date>.md               # WBS・品質目標（スタイルにより粒度が異なる）
+            ├── agent_briefing_run<N>_<date>.md    # チーム編成
+            ├── <スタイル別成果物>                   # 後述
+            ├── review_run<N>_iter<i>_<date>.md    # 品質レビュー記録（品質ループが実行された場合）
+            ├── minutes_run<N>_iter<i>_<date>.md   # 打ち合わせ議事録（品質ループが実行された場合）
+            ├── discussion_run<N>_<date>.md        # スペシャリスト対談（オプション）
+            ├── report_<topic>_<date>.md           # 最終レポート
+            ├── manifest_run<N>.json               # ランメタデータ
+            ├── run_progress.json                  # 再開用進捗（調査完了時に自動削除）
+            └── raw/                               # 検索・フェッチ生データ（ゼロトラスト保存）
+                └── <name>_run<N>_<tool>_<idx>_<datetime>.md
+```
+
+**スタイル別の最小成果物単位:**
+
+| `--style` | 最小成果物単位 | ファイルパターン |
+|-----------|--------------|----------------|
+| `research_report`（デフォルト） | スペシャリスト | `specialist_<name>_run<N>_<date>.md` |
+| `executive_memo` | スペシャリスト | `specialist_<name>_run<N>_<date>.md` |
+| `magazine_column` | スペシャリスト | `specialist_<name>_run<N>_<date>.md` |
+| `book_chapter` | 節（section） | `book_<section_id>_run<N>_<date>.md` |
+
+> **設計方針:** WBS の構造と成果物の構造は整合します。`book_chapter` スタイルでは部→章→節の最小粒度まで PM が設計し、節単位で成果物が生成されます。WBS にも節レベルのタスクが表示されます。
+
+**`research_report` / `executive_memo` / `magazine_column` の場合:**
+
+```
+artifacts/
+├── wbs_run1_20260420.md
+├── agent_briefing_run1_20260420.md
+├── specialist_AIエンジニア_run1_20260420.md   # スペシャリストごとに1ファイル
+├── specialist_市場アナリスト_run1_20260420.md
+├── discussion_run1_20260420.md              # 対談（生成された場合）
+├── review_run1_iter1_20260420.md
+├── report_テーマ名_20260420.md
+└── manifest_run1.json
+```
+
+**`book_chapter` の場合:**
+
+```
+artifacts/
+├── wbs_run1_20260420.md                     # 部・章・節レベルのタスクを含む
+├── agent_briefing_run1_20260420.md
+├── book_ch1-sec1_run1_20260420.md           # 節ごとに1ファイル
+├── book_ch1-sec2_run1_20260420.md
+├── book_ch2-sec1_run1_20260420.md
+├── discussion_run1_20260420.md
+├── report_テーマ名_20260420.md              # 全セクション統合レポート
+└── manifest_run1.json
 ```
 
 ---
