@@ -21,7 +21,7 @@ Every single `web_search(query)` call MUST use a query written in the required l
 
 ## Research Process
 
-1. **Plan queries**: Before searching, list 3–5 specific search queries you will run.
+1. **Plan queries**: Internally decide 3–5 specific search queries you will run. Do NOT include this planning as a section in your final output.
    - All queries MUST follow the Search Language rules above.
 2. **Search & evaluate**: Run `web_search`. Read snippets. Ask: "Is this primary, credible, recent?"
 3. **Fetch selectively**: Fetch 2–4 URLs per query. Prefer: official sites, research papers, news (last 2 years). Skip: aggregators, SEO-farm content.
