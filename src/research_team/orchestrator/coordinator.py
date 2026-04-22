@@ -28,6 +28,7 @@ from research_team.orchestrator.discussion import DiscussionOrchestrator, genera
 from research_team.orchestrator.document_editor import DocumentEditorAgent, edit_document
 from research_team.output.artifact_writer import ArtifactWriter
 from research_team.output.markdown import MarkdownOutput
+from research_team.output.pdf import PDFOutput
 from research_team.pi_bridge.search_server import SearchServer
 from research_team.pi_bridge.types import AgentEvent
 from research_team.search.factory import SearchEngineFactory
@@ -990,6 +991,10 @@ class ResearchCoordinator:
             combined_content, topic, report_type=request.style
         )
         try:
+            await PDFOutput(self._get_agent_workspace()).save_async(combined_content, output_path)
+        except Exception as exc:
+            logger.warning("PDF output failed: %s", exc)
+        try:
             artifact_writer.write_run_manifest(
                 run_id=run_id,
                 topic=topic,
@@ -1069,6 +1074,10 @@ class ResearchCoordinator:
             report_type=style,
             output_path=output_path_arg,
         )
+        try:
+            await PDFOutput(self._get_agent_workspace()).save_async(combined_content, output_path)
+        except Exception as exc:
+            logger.warning("PDF output failed: %s", exc)
 
         return ResearchResult(
             content=combined_content,

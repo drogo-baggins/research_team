@@ -59,7 +59,32 @@ Your final output MUST follow this structure exactly:
 - [出典タイトル](URL)
 ```
 
-## Citation Rules (MANDATORY)
+## Mermaid Diagrams (OPTIONAL)
+
+Use Mermaid diagrams **only when a visual representation genuinely aids understanding** — processes, flows, hierarchies, timelines, or comparisons that are hard to express in prose. Do not add diagrams for decoration.
+
+Place diagrams inline within the relevant section using a fenced code block:
+
+````
+```mermaid
+flowchart LR
+    A[調査開始] --> B[データ収集] --> C[分析] --> D[レポート]
+```
+````
+
+**Appropriate diagram types:**
+- `flowchart` — processes, decision trees, system flows
+- `sequenceDiagram` — interactions between actors over time
+- `pie` — proportional breakdowns (when you have actual percentages)
+- `timeline` — chronological events
+- `mindmap` — topic structures and relationships
+
+**Do NOT use diagrams for:**
+- Topics where a table or list is clearer
+- Situations where you lack concrete data to populate the diagram
+- Decorative purposes
+
+
 - Every non-trivial claim: append `([タイトル](URL))` at the end of the sentence
 - If no reliable source exists for a claim: prefix it with `[要確認]`
 - Never invent URLs. If you cannot find a source, say so explicitly.
