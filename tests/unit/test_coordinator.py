@@ -1258,7 +1258,7 @@ def test_build_format_prompt_no_modification_text_omits_section():
 
 
 @pytest.mark.asyncio
-async def test_run_modify_mode_no_sessions_increments_run_count(tmp_path):
+async def test_run_modify_mode_no_sessions_does_not_increment_run_count(tmp_path):
     coord = ResearchCoordinator.__new__(ResearchCoordinator)
     coord._workspace_dir = str(tmp_path)
     coord._project_manager = MagicMock()
@@ -1272,7 +1272,7 @@ async def test_run_modify_mode_no_sessions_increments_run_count(tmp_path):
     await coord._run_modify_mode(session, "markdown")
 
     ui.append_agent_message.assert_awaited_once()
-    assert session.run_count == 1
+    assert session.run_count == 0
 
 
 @pytest.mark.asyncio

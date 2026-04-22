@@ -625,6 +625,14 @@ class ResearchCoordinator:
         import re as _re
         return _re.sub(r"^第\d+章[\s\u3000]*", "", title).strip()
 
+    @staticmethod
+    def _strip_section_preamble(content: str) -> str:
+        lines = content.split("\n")
+        for i, line in enumerate(lines):
+            if line.startswith("#"):
+                return "\n".join(lines[i:])
+        return content
+
     def _assemble_book_from_outline(
         self,
         outline: "BookOutline",
@@ -634,7 +642,7 @@ class ResearchCoordinator:
     ) -> str:
         from pathlib import Path as _Path
 
-        title_line = f"# {topic}\n\n" if topic else ""
+        title_line = f"# {topic.split(chr(10))[0].strip()}\n\n" if topic else ""
 
         toc_lines = ["## 目次", ""]
         for ch in outline.chapters:
@@ -663,6 +671,7 @@ class ResearchCoordinator:
                         raw = _Path(artifact_path).read_text(encoding="utf-8")
                         sep_idx = raw.find("---\n\n")
                         content = raw[sep_idx + 5:].strip() if sep_idx != -1 else raw.strip()
+                        content = self._strip_section_preamble(content)
                     except Exception as exc:
                         logger.warning("_assemble_book: failed to read %s: %s", artifact_path, exc)
                 if content:
@@ -958,13 +967,25 @@ class ResearchCoordinator:
                     f"## エグゼクティブサマリー\n\n{exec_summary}\n\n---\n\n{combined_content}"
                 )
 
+        _DISCUSSION_MARKER = "\n\n---\n\n# 対談トランスクリプト"
+        _discussion_suffix = ""
+        _edit_body = combined_content
+        if request.style == "book_chapter":
+            disc_idx = combined_content.rfind(_DISCUSSION_MARKER)
+            if disc_idx != -1:
+                _discussion_suffix = combined_content[disc_idx:]
+                _edit_body = combined_content[:disc_idx]
+
         combined_content = await edit_document(
             self._stream_agent_output,
             self._doc_editor,
             topic,
-            combined_content,
+            _edit_body,
             request.style,
         )
+
+        if _discussion_suffix:
+            combined_content += _discussion_suffix
 
         active_id = self._project_manager.get_active_id()
         if active_id:
@@ -1366,7 +1387,7 @@ class ResearchCoordinator:
                     "こんにちは！どちらの操作を行いますか？\n\n"
                     "**1.** 新しいテーマを調査する\n"
                     "**2.** 既存の成果物を修正する\n\n"
-                    "番号を入力してください。",
+                    "番号または調査テーマを直接入力してください。",
                 )
                 mode_input = await self._ui.wait_for_user_message()
                 if _is_negative(mode_input):
@@ -1375,13 +1396,17 @@ class ResearchCoordinator:
                 if mode_input.strip() in ("2", "２"):
                     await self._run_modify_mode(session, output_format)
                     continue
+                if mode_input.strip() in ("1", "１"):
+                    await self._ui.append_agent_message("CSM", "調査テーマを入力してください。")
+                    topic = await self._ui.wait_for_user_message()
+                else:
+                    topic = mode_input
             else:
                 await self._ui.append_agent_message(
                     "CSM",
                     "次のテーマまたは追加依頼を入力してください。終了する場合は「終了」と入力してください。",
                 )
-
-            topic = await self._ui.wait_for_user_message()
+                topic = await self._ui.wait_for_user_message()
             await self._log("running", f"テーマ: {topic}")
 
             if _is_negative(topic):
@@ -1435,7 +1460,6 @@ class ResearchCoordinator:
         completed = self.list_completed_sessions()
         if not completed:
             await self._ui.append_agent_message("CSM", "修正可能な成果物が見つかりません。新しいテーマを入力してください。")
-            session.run_count += 1
             return
 
         lines = ["修正するセッションを番号で選択してください：\n"]
