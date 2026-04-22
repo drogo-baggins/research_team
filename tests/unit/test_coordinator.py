@@ -662,6 +662,7 @@ async def test_run_interactive_additional_request_loop(tmp_path):
     coord._log = AsyncMock()
 
     user_inputs = [
+        "1",
         "テストテーマA",
         "別のテーマ追加",
         "終了",
@@ -704,7 +705,7 @@ async def test_run_interactive_updates_session_last_run_id(tmp_path, monkeypatch
     state = SessionState()
     monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
 
-    user_inputs = ["テストテーマ", "終了"]
+    user_inputs = ["1", "テストテーマ", "終了"]
     input_iter = iter(user_inputs)
 
     async def fake_wait() -> str:
@@ -740,7 +741,7 @@ async def test_parse_regenerate_intent_dispatches_in_interactive(tmp_path, monke
     state = SessionState(last_run_id=3, session_id="sess-1")
     monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
 
-    user_inputs = ["コラム形式に変えて", "終了"]
+    user_inputs = ["1", "コラム形式に変えて", "終了"]
     input_iter = iter(user_inputs)
 
     async def fake_wait() -> str:
@@ -791,7 +792,7 @@ async def test_run_interactive_regenerate_manifest_missing_falls_back_to_run(tmp
     state = SessionState(last_run_id=2, session_id="sess-2")
     monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
 
-    user_inputs = ["コラム形式に変えて", "終了"]
+    user_inputs = ["1", "コラム形式に変えて", "終了"]
     input_iter = iter(user_inputs)
 
     async def fake_wait() -> str:
@@ -1192,3 +1193,115 @@ async def test_run_specialist_pass_all_pre_completed_skips_all_agents():
     assert "Aのキャッシュ内容" in combined
     assert "Bのキャッシュ内容" in combined
     assert "Cのキャッシュ内容" in combined
+
+
+def test_list_completed_sessions_empty_workspace(tmp_path):
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    coord._project_manager = MagicMock()
+    assert coord.list_completed_sessions() == []
+
+
+def test_list_completed_sessions_returns_sessions(tmp_path):
+    from research_team.orchestrator.coordinator import CompletedSession
+
+    sessions_dir = tmp_path / "sessions" / "20260422_120000_テーマA" / "artifacts"
+    sessions_dir.mkdir(parents=True)
+    manifest = {
+        "run_id": 1,
+        "topic": "テーマA\n詳細",
+        "style": "research_report",
+        "specialists": [],
+        "discussion_artifact_path": None,
+        "report_path": str(sessions_dir / "report.md"),
+        "book_sections": [],
+    }
+    (sessions_dir / "manifest_run1.json").write_text(
+        __import__("json").dumps(manifest), encoding="utf-8"
+    )
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    coord._project_manager = MagicMock()
+
+    results = coord.list_completed_sessions()
+    assert len(results) == 1
+    assert isinstance(results[0], CompletedSession)
+    assert results[0].run_id == 1
+    assert results[0].style == "research_report"
+    assert results[0].session_id == "20260422_120000_テーマA"
+
+
+def test_list_completed_sessions_skips_malformed_manifests(tmp_path):
+    sessions_dir = tmp_path / "sessions" / "20260422_bad_session" / "artifacts"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "manifest_run1.json").write_text("not json", encoding="utf-8")
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    coord._project_manager = MagicMock()
+
+    assert coord.list_completed_sessions() == []
+
+
+def test_build_format_prompt_includes_modification_text():
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    prompt = coord._build_format_prompt("テーマ", "コンテンツ", "research_report", "冒頭を削除してください")
+    assert "冒頭を削除してください" in prompt
+    assert "修正指示" in prompt
+
+
+def test_build_format_prompt_no_modification_text_omits_section():
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    prompt = coord._build_format_prompt("テーマ", "コンテンツ", "research_report")
+    assert "修正指示" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_run_modify_mode_no_sessions_increments_run_count(tmp_path):
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    coord._project_manager = MagicMock()
+
+    ui = AsyncMock()
+    coord._ui = ui
+
+    from research_team.orchestrator.coordinator import SessionState
+
+    session = SessionState()
+    await coord._run_modify_mode(session, "markdown")
+
+    ui.append_agent_message.assert_awaited_once()
+    assert session.run_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_modify_mode_invalid_selection_returns_early(tmp_path):
+    from research_team.orchestrator.coordinator import CompletedSession
+    from pathlib import Path
+
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    coord._project_manager = MagicMock()
+
+    fake_session = CompletedSession(
+        session_id="ses_abc",
+        topic="テスト",
+        run_id=1,
+        style="research_report",
+        created_at="2026-04-22 12:00",
+        artifacts_dir=Path(tmp_path),
+        manifest_path=Path(tmp_path) / "manifest_run1.json",
+    )
+    coord.list_completed_sessions = MagicMock(return_value=[fake_session])
+
+    ui = AsyncMock()
+    ui.wait_for_user_message = AsyncMock(return_value="99")
+    coord._ui = ui
+
+    from research_team.orchestrator.coordinator import SessionState
+
+    session = SessionState()
+    await coord._run_modify_mode(session, "markdown")
+
+    assert session.run_count == 0

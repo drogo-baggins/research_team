@@ -65,6 +65,19 @@ class RegenerateRequest:
 
 
 @dataclass
+class CompletedSession:
+    """完了済みセッションのメタデータ。"""
+
+    session_id: str
+    topic: str
+    run_id: int
+    style: str
+    created_at: str
+    artifacts_dir: Path
+    manifest_path: Path
+
+
+@dataclass
 class SessionState:
     current_topic: str = ""
     last_report_path: str = ""
@@ -670,14 +683,20 @@ class ResearchCoordinator:
 
         return result
 
-    def _build_format_prompt(self, topic: str, content: str, style: str) -> str:
+    def _build_format_prompt(self, topic: str, content: str, style: str, modification_text: str = "") -> str:
         max_chars = os.environ.get("RT_MAX_SUMMARY_CHARS")
         body = content[:int(max_chars)] if max_chars else content
         style_instruction = _STYLE_INSTRUCTIONS.get(style, "")
+        modification_section = (
+            f"【修正指示】以下の点を修正してください：{modification_text}\n"
+            if modification_text
+            else ""
+        )
         return (
             f"以下は「{topic}」についての専門家調査結果（生データ）です。\n\n"
             f"{body}\n\n"
             f"上記の調査データを元に、完成した読み物として整形してください。\n"
+            f"{modification_section}"
             f"【形式指示】{style_instruction}\n"
             f"【引用・出典の保持（必須）】本文中のインライン引用（例: ([タイトル](URL))）は"
             f"削除せずそのまま残してください。"
@@ -1065,7 +1084,7 @@ class ResearchCoordinator:
 
         # CSM 整形
         if style in _STYLES_WITHOUT_EXEC_SUMMARY:
-            format_prompt = self._build_format_prompt(topic, combined_content, style)
+            format_prompt = self._build_format_prompt(topic, combined_content, style, regen_request_text)
             formatted = await self._stream_agent_output(self._csm, format_prompt, "CSM")
             if formatted:
                 combined_content = formatted
@@ -1341,12 +1360,27 @@ class ResearchCoordinator:
                 await self._notify("CSM", "前回の進捗を破棄しました。新規調査を開始します。")
 
         while True:
-            await self._ui.append_agent_message(
-                "CSM",
-                "こんにちは！リサーチするテーマを入力してください。"
-                if session.run_count == 0
-                else "次のテーマまたは追加依頼を入力してください。終了する場合は「終了」と入力してください。",
-            )
+            if session.run_count == 0:
+                await self._ui.append_agent_message(
+                    "CSM",
+                    "こんにちは！どちらの操作を行いますか？\n\n"
+                    "**1.** 新しいテーマを調査する\n"
+                    "**2.** 既存の成果物を修正する\n\n"
+                    "番号を入力してください。",
+                )
+                mode_input = await self._ui.wait_for_user_message()
+                if _is_negative(mode_input):
+                    await self._ui.append_agent_message("CSM", "ありがとうございました。調査を終了します。")
+                    break
+                if mode_input.strip() in ("2", "２"):
+                    await self._run_modify_mode(session, output_format)
+                    continue
+            else:
+                await self._ui.append_agent_message(
+                    "CSM",
+                    "次のテーマまたは追加依頼を入力してください。終了する場合は「終了」と入力してください。",
+                )
+
             topic = await self._ui.wait_for_user_message()
             await self._log("running", f"テーマ: {topic}")
 
@@ -1396,6 +1430,57 @@ class ResearchCoordinator:
                 await self._ui.append_log("running", tb)
                 raise
 
+    async def _run_modify_mode(self, session: SessionState, output_format: str) -> None:
+        assert self._ui is not None
+        completed = self.list_completed_sessions()
+        if not completed:
+            await self._ui.append_agent_message("CSM", "修正可能な成果物が見つかりません。新しいテーマを入力してください。")
+            session.run_count += 1
+            return
+
+        lines = ["修正するセッションを番号で選択してください：\n"]
+        for i, s in enumerate(completed, 1):
+            topic_short = s.topic[:40].replace("\n", " ")
+            lines.append(f"**{i}.** [{s.created_at}] {topic_short}（{s.style}）")
+        await self._ui.append_agent_message("CSM", "\n".join(lines))
+
+        sel_input = await self._ui.wait_for_user_message()
+        try:
+            sel_idx = int(sel_input.strip()) - 1
+            if not (0 <= sel_idx < len(completed)):
+                raise ValueError
+        except ValueError:
+            await self._ui.append_agent_message("CSM", "無効な番号です。最初からやり直してください。")
+            return
+
+        chosen = completed[sel_idx]
+        topic_short = chosen.topic[:40].replace("\n", " ")
+        await self._ui.append_agent_message(
+            "CSM",
+            f"「{topic_short}」の成果物を選択しました。\n修正内容を入力してください。",
+        )
+        modification_text = await self._ui.wait_for_user_message()
+
+        regen = RegenerateRequest(
+            run_id=chosen.run_id,
+            artifacts_dir=str(chosen.artifacts_dir),
+            re_research_specialists=[],
+            overwrite_report=True,
+        )
+        try:
+            result = await self._run_regenerate(regen, modification_text, chosen.session_id)
+            session.session_id = chosen.session_id
+            session.last_report_path = result.output_path
+            session.run_count += 1
+            await self._notify("CSM", f"✅ レポートを更新しました:\n`{result.output_path}`")
+            await self._log("done", f"再生成完了: {result.output_path}")
+        except FileNotFoundError as exc:
+            logger.warning("Manifest not found: %s", exc)
+            await self._notify("CSM", f"⚠️ 成果物データが見つかりません: {exc}")
+        except Exception as exc:
+            logger.warning("Regenerate failed: %s", exc)
+            await self._notify("CSM", f"⚠️ 修正に失敗しました: {exc}")
+
     def _detect_resumable_session(self) -> tuple[RunProgress, ArtifactWriter] | None:
         active_id = self._project_manager.get_active_id()
         if active_id:
@@ -1420,9 +1505,38 @@ class ResearchCoordinator:
 
         return None
 
+    def list_completed_sessions(self) -> list[CompletedSession]:
+        results: list[CompletedSession] = []
+        sessions_dir = Path(self._workspace_dir) / "sessions"
+        if not sessions_dir.exists():
+            return results
+        for manifest_path in sorted(
+            sessions_dir.glob("*/artifacts/manifest_run*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ):
+            try:
+                data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                session_id = manifest_path.parent.parent.name
+                results.append(
+                    CompletedSession(
+                        session_id=session_id,
+                        topic=data.get("topic", ""),
+                        run_id=data.get("run_id", 1),
+                        style=data.get("style", "research_report"),
+                        created_at=datetime.fromtimestamp(manifest_path.stat().st_mtime).strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        artifacts_dir=manifest_path.parent,
+                        manifest_path=manifest_path,
+                    )
+                )
+            except Exception:
+                continue
+        return results
+
     @staticmethod
     def _make_session_id(topic: str) -> str:
-        """セッション識別子を生成する: YYYYMMDD_HHMMSS_{sanitized_topic}"""
         time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         slug = re.sub(r"[^\w\u3040-\u30ff\u4e00-\u9fff]", "_", topic)[:20]
         return f"{time_str}_{slug}"

@@ -54,6 +54,8 @@ async def test_run_interactive_no_prerun_topic_confirmation(tmp_path):
 
     async def inject():
         await asyncio.sleep(0.05)
+        await ui._chat_queue.put("1")
+        await asyncio.sleep(0.05)
         await ui._chat_queue.put("Pythonの歴史")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("終了")
@@ -92,6 +94,8 @@ async def test_run_interactive_run_research_called_after_theme_input(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path), ui=ui)
 
     async def inject():
+        await asyncio.sleep(0.05)
+        await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("AI技術の動向")
         await asyncio.sleep(0.05)
@@ -134,6 +138,8 @@ async def test_run_interactive_continues_loop_after_first_research(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path), ui=ui)
 
     async def inject():
+        await asyncio.sleep(0.05)
+        await ui._chat_queue.put("1")
         await asyncio.sleep(0.05)
         await ui._chat_queue.put("最初のテーマ")
         await asyncio.sleep(0.05)
