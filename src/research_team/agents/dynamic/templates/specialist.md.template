@@ -59,30 +59,35 @@ Your final output MUST follow this structure exactly:
 - [出典タイトル](URL)
 ```
 
-## Mermaid Diagrams (OPTIONAL)
+## Mermaid Diagrams（条件付き必須）
 
-Use Mermaid diagrams **only when a visual representation genuinely aids understanding** — processes, flows, hierarchies, timelines, or comparisons that are hard to express in prose. Do not add diagrams for decoration.
+以下のいずれかに該当するトピックが含まれる場合、**必ず1図以上**を該当セクションの本文直後に挿入すること:
 
-Place diagrams inline within the relevant section using a fenced code block:
+| トリガー条件 | 推奨ダイアグラム種別 |
+|---|---|
+| 3ステップ以上のプロセス・手順・ワークフロー | `flowchart` |
+| 組織構造・システムアーキテクチャ・レイヤー構造 | `flowchart` / `classDiagram` |
+| ビフォーアフター・2択以上の比較・対比 | `flowchart` |
+| 5イベント以上のタイムライン・変遷 | `timeline` |
+| 複数アクター間のやり取り・連携フロー | `sequenceDiagram` |
+| 主題の全体像・概念間の関係性の俯瞰 | `mindmap` |
 
-````
+図は**末尾にまとめず**、対応するセクションの直後に配置すること:
+
 ```mermaid
 flowchart LR
-    A[調査開始] --> B[データ収集] --> C[分析] --> D[レポート]
+    A[データ収集] --> B[検証] --> C[統合] --> D[配信]
 ```
-````
 
-**Appropriate diagram types:**
-- `flowchart` — processes, decision trees, system flows
-- `sequenceDiagram` — interactions between actors over time
-- `pie` — proportional breakdowns (when you have actual percentages)
-- `timeline` — chronological events
-- `mindmap` — topic structures and relationships
+使用できるダイアグラム種別: `flowchart` / `sequenceDiagram` / `classDiagram` / `timeline` / `mindmap`
 
-**Do NOT use diagrams for:**
-- Topics where a table or list is clearer
-- Situations where you lack concrete data to populate the diagram
-- Decorative purposes
+**使用禁止:**
+- 表やリストで十分な内容
+- 具体的な数値・名称が不明な「雰囲気図」
+- 装飾目的
+
+該当トピックがない場合のみ省略可。その場合は末尾に1行記載すること:
+`<!-- Mermaid: 本節は図解対象トピックなし -->`
 
 
 - Every non-trivial claim: append `([タイトル](URL))` at the end of the sentence

@@ -607,18 +607,26 @@ class ResearchCoordinator:
             f"\n\n【重要】サマリー本文のみを出力してください。説明や前置きは不要です。"
         )
 
+    @staticmethod
+    def _strip_chapter_prefix(title: str) -> str:
+        import re as _re
+        return _re.sub(r"^第\d+章[\s\u3000]*", "", title).strip()
+
     def _assemble_book_from_outline(
         self,
         outline: "BookOutline",
         section_paths: dict[str, dict],
         discussion_artifact_path: str | None = None,
+        topic: str = "",
     ) -> str:
         from pathlib import Path as _Path
+
+        title_line = f"# {topic}\n\n" if topic else ""
 
         toc_lines = ["## 目次", ""]
         for ch in outline.chapters:
             ch_idx = ch["chapter_index"]
-            ch_title = ch["chapter_title"]
+            ch_title = self._strip_chapter_prefix(ch["chapter_title"])
             toc_lines.append(f"**第{ch_idx}章　{ch_title}**")
             for sec in ch.get("sections", []):
                 sec_idx = sec["section_index"]
@@ -629,7 +637,7 @@ class ResearchCoordinator:
         chapter_parts: list[str] = []
         for ch in outline.chapters:
             ch_idx = ch["chapter_index"]
-            ch_title = ch["chapter_title"]
+            ch_title = self._strip_chapter_prefix(ch["chapter_title"])
             ch_lines: list[str] = [f"## 第{ch_idx}章　{ch_title}", ""]
             for sec in ch.get("sections", []):
                 sec_idx = sec["section_index"]
@@ -651,7 +659,7 @@ class ResearchCoordinator:
 
         toc = "\n".join(toc_lines)
         body = "\n\n".join(chapter_parts)
-        result = f"{toc}\n\n---\n\n{body}"
+        result = f"{title_line}{toc}\n\n---\n\n{body}"
 
         if discussion_artifact_path:
             try:
@@ -916,6 +924,7 @@ class ResearchCoordinator:
                 outline=book_outline,
                 section_paths=book_section_paths,
                 discussion_artifact_path=discussion_artifact_path,
+                topic=topic,
             )
         elif request.style == "magazine_column":
             format_prompt = self._build_format_prompt(topic, combined_content, request.style)
