@@ -633,6 +633,27 @@ class ResearchCoordinator:
                 return "\n".join(lines[i:])
         return content
 
+    @staticmethod
+    def _strip_section_suffix(content: str) -> str:
+        _EDITORIAL_MARKERS = [
+            "\n## 執筆完了",
+            "\n## 実装内容",
+            "\n## 完了",
+            "\n**字数：",
+            "\n**実装内容：",
+            "\n**執筆内容：",
+            "\n---\n\n執筆しました",
+            "\n---\n\n以上、",
+            "\n以上で",
+            "\n執筆いたしました",
+            "\n執筆しました",
+        ]
+        for marker in _EDITORIAL_MARKERS:
+            idx = content.find(marker)
+            if idx != -1:
+                content = content[:idx].rstrip()
+        return content
+
     def _assemble_book_from_outline(
         self,
         outline: "BookOutline",
@@ -672,6 +693,7 @@ class ResearchCoordinator:
                         sep_idx = raw.find("---\n\n")
                         content = raw[sep_idx + 5:].strip() if sep_idx != -1 else raw.strip()
                         content = self._strip_section_preamble(content)
+                        content = self._strip_section_suffix(content)
                     except Exception as exc:
                         logger.warning("_assemble_book: failed to read %s: %s", artifact_path, exc)
                 if content:

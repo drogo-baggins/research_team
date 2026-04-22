@@ -7,6 +7,28 @@ from pydantic import BaseModel, Field, computed_field
 
 logger = logging.getLogger(__name__)
 
+_EDITORIAL_SUFFIX_MARKERS = [
+    "\n## 執筆完了",
+    "\n## 実装内容",
+    "\n## 完了",
+    "\n**字数：",
+    "\n**実装内容：",
+    "\n**執筆内容：",
+    "\n---\n\n執筆しました",
+    "\n---\n\n以上、",
+    "\n以上で",
+    "\n執筆いたしました",
+    "\n執筆しました",
+]
+
+
+def _strip_editorial_suffix(content: str) -> str:
+    for marker in _EDITORIAL_SUFFIX_MARKERS:
+        idx = content.find(marker)
+        if idx != -1:
+            content = content[:idx].rstrip()
+    return content
+
 
 class BookSection(BaseModel):
     chapter_index: int
@@ -103,6 +125,8 @@ class BookChapterPipeline:
             f"【調査生データ（参照・引用可）】\n{raw_data[:20000]}\n\n"
             f"上記をもとに、節「{section.section_title}」を1,500〜3,000字で詳細かつ叙述的に執筆してください。\n"
             f"節見出し（### レベル）から始めてください。説明文・前置きは不要です。\n"
+            f"【禁止】節末尾に「執筆完了」「完了しました」「執筆いたしました」「実装内容：」「字数：」などの"
+            f"完了報告・実行サマリー・メタ情報を絶対に含めないこと。本文のみを出力すること。\n"
             f"【引用必須】調査データ内の出典を参照した場合は、各主張の末尾にインライン引用"
             f"（例: ([タイトル](URL))）を付けてください。"
             f"節の末尾に「## Sources」セクションを設け、使用した出典URLを箇条書きでリストアップしてください。"
@@ -134,6 +158,7 @@ class BookChapterPipeline:
             )
             text = await self._stream_fn(agent, prompt, agent_name)
             if text:
+                text = _strip_editorial_suffix(text)
                 written.append(f"### {section.section_title}\n\n{text}")
                 previous_summary += f"\n- {section.section_title}: {text[:300]}..."
                 if artifact_writer:
