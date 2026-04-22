@@ -145,7 +145,16 @@ class DiscussionOrchestrator:
         participants = _build_participants_list(personas)
 
         discussion_log: list[str] = []
-        lines: list[str] = [f"# スペシャリスト対談: {topic.split(chr(10))[0].strip()}", ""]
+        participant_intro = "\n".join(
+            f"- **{p['label']}**: {p['name']}（{p['expertise']}）" for p in personas
+        )
+        lines: list[str] = [
+            f"# スペシャリスト対談: {topic.split(chr(10))[0].strip()}",
+            "",
+            "## 参加者",
+            participant_intro,
+            "",
+        ]
 
         for spec in specialists:
             discussion_so_far = (
