@@ -26,6 +26,9 @@ class ControlUI:
         self._on_approval_start: Callable[[], None] | None = None
         self._on_approval_end: Callable[[], None] | None = None
         self._current_mode: str = "new_request"
+        self._mode_change_callback: Callable | None = None
+        self._session_selection_event: asyncio.Event = asyncio.Event()
+        self._session_selection_result: str | None = None
 
     def set_approval_hooks(
         self,
@@ -60,6 +63,7 @@ class ControlUI:
         self._closed_event.set()
         self._approval_event.set()
         self._wbs_approval_event.set()
+        self._session_selection_event.set()
         self._chat_queue.put_nowait("")
 
     async def _on_page_load(self, page: Page) -> None:
@@ -79,6 +83,11 @@ class ControlUI:
                 await self._chat_queue.put(payload.get("message", ""))
             case "mode_selected":
                 self._current_mode = payload.get("mode", "new_request")
+                if self._mode_change_callback is not None:
+                    asyncio.create_task(self._mode_change_callback(self._current_mode))
+            case "session_selected":
+                self._session_selection_result = payload.get("session_id")
+                self._session_selection_event.set()
             case "approval_done":
                 self._approval_result = payload.get("approved", False)
                 self._approval_event.set()
@@ -223,6 +232,24 @@ class ControlUI:
             )
         except Exception:
             pass
+
+    def set_mode_change_callback(self, cb: Callable) -> None:
+        self._mode_change_callback = cb
+
+    async def render_session_list(self, sessions: list[dict]) -> None:
+        if not self._is_alive():
+            return
+        assert self._page
+        try:
+            await self._page.evaluate(f"renderSessionList({json.dumps(sessions)})")
+        except Exception:
+            pass
+
+    async def wait_for_session_selection(self) -> str | None:
+        self._session_selection_event.clear()
+        self._session_selection_result = None
+        await self._session_selection_event.wait()
+        return self._session_selection_result
 
     async def close(self) -> None:
         if self._context:

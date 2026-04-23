@@ -240,6 +240,35 @@
     .btn-wbs-cancel { flex: 1; padding: 7px; background: #2a2a3a; color: #888; border: 1px solid #3a3a4a; border-radius: 6px; font-size: 12px; cursor: pointer; }
     .btn-wbs-cancel:hover { background: #3a3a4a; }
 
+    /* ── セッション選択パネル（変更モード時） ── */
+    .session-select-pane {
+      flex: 1; display: flex; flex-direction: column;
+      border-bottom: 1px solid #0f3460; overflow: hidden;
+    }
+    .session-list-body {
+      flex: 1; overflow-y: auto; padding: 4px 0;
+    }
+    .session-list-empty {
+      padding: 16px 14px; font-size: 11px; color: #444; font-style: italic;
+    }
+    .session-group-header {
+      padding: 6px 14px 3px;
+      font-size: 11px; font-weight: 600; color: #7090c0;
+      letter-spacing: 0.03em;
+    }
+    .session-row {
+      padding: 6px 14px; cursor: pointer;
+      border-left: 2px solid transparent;
+      transition: background .1s, border-color .1s;
+    }
+    .session-row:hover { background: rgba(255,255,255,0.04); border-left-color: #3b5080; }
+    .session-row.active { background: #0f2040; border-left-color: #3b82f6; }
+    .session-topic {
+      font-size: 12px; color: #c0d0f0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .session-meta { font-size: 10px; color: #5070a0; margin-top: 2px; }
+
     /* スクロールバー */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -332,6 +361,14 @@
         </div>
       </div>
 
+      <!-- セッション選択パネル（変更モード時のみ表示） -->
+      <div id="sessionSelectPanel" class="session-select-pane" style="display:none">
+        <div class="panel-header">📂 変更対象セッション</div>
+        <div id="sessionList" class="session-list-body">
+          <div class="session-list-empty">セッションはまだありません</div>
+        </div>
+      </div>
+
       <!-- エージェント状態パネル -->
       <div class="agents-pane">
         <div class="panel-header">🤖 エージェント</div>
@@ -357,7 +394,61 @@
     function selectMode(mode) {
       document.getElementById('modeBtnNew').classList.toggle('active', mode === 'new_request');
       document.getElementById('modeBtnModify').classList.toggle('active', mode === 'modify');
+      if (mode !== 'modify') renderSessionList([]);
       window.__rt_signal({ type: 'mode_selected', mode: mode });
+    }
+
+    function renderSessionList(sessions) {
+      const panel = document.getElementById('sessionSelectPanel');
+      const list = document.getElementById('sessionList');
+      list.innerHTML = '';
+      if (!sessions || sessions.length === 0) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'flex';
+      const groups = {};
+      const noProject = [];
+      sessions.forEach(s => {
+        if (s.project_id) {
+          if (!groups[s.project_id]) groups[s.project_id] = { topic: s.project_topic || s.project_id, items: [] };
+          groups[s.project_id].items.push(s);
+        } else {
+          noProject.push(s);
+        }
+      });
+      const hasGroups = Object.keys(groups).length > 0;
+      Object.values(groups).forEach(grp => {
+        const h = document.createElement('div');
+        h.className = 'session-group-header';
+        h.textContent = '📁 ' + grp.topic;
+        list.appendChild(h);
+        grp.items.forEach(s => list.appendChild(_buildSessionRow(s)));
+      });
+      if (noProject.length > 0) {
+        if (hasGroups) {
+          const h = document.createElement('div');
+          h.className = 'session-group-header';
+          h.textContent = '📄 単体セッション';
+          list.appendChild(h);
+        }
+        noProject.forEach(s => list.appendChild(_buildSessionRow(s)));
+      }
+    }
+
+    function _buildSessionRow(s) {
+      const row = document.createElement('div');
+      row.className = 'session-row';
+      row.onclick = () => {
+        document.querySelectorAll('.session-row').forEach(r => r.classList.remove('active'));
+        row.classList.add('active');
+        window.__rt_signal({ type: 'session_selected', session_id: s.session_id });
+      };
+      const topic = (s.topic || '').replace(/\n/g, ' ').substring(0, 40);
+      const styleLabel = { research_report: 'レポート', executive_memo: 'メモ', magazine_column: 'コラム', book_chapter: '書籍' }[s.style] || s.style;
+      row.innerHTML = `<div class="session-topic">${escapeHtml(topic)}</div>`
+                    + `<div class="session-meta">${escapeHtml(s.created_at)} · ${escapeHtml(styleLabel)}</div>`;
+      return row;
     }
 
     // ── チャット ──────────────────────────────────────────────

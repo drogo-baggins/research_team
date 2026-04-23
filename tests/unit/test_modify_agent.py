@@ -15,6 +15,7 @@ def _make_coordinator(tmp_dir: str) -> ResearchCoordinator:
     mock_ui.append_agent_message = AsyncMock()
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = AsyncMock(return_value="終了")
+    mock_ui.wait_for_session_selection = AsyncMock(return_value=None)
     coordinator = ResearchCoordinator(workspace_dir=tmp_dir, ui=mock_ui)
     return coordinator
 
@@ -43,6 +44,7 @@ def _make_completed_session(tmp_dir: str, topic: str = "テスト調査") -> Com
         created_at="2026-01-01 12:00",
         artifacts_dir=session_dir,
         manifest_path=manifest_path,
+        report_path=str(report_path),
     )
 
 
@@ -94,9 +96,9 @@ async def test_run_modify_session_no_sessions_notifies():
 @pytest.mark.asyncio
 async def test_run_modify_session_cancel_on_session_selection():
     with tempfile.TemporaryDirectory() as tmp_dir:
-        chosen = _make_completed_session(tmp_dir)
+        _make_completed_session(tmp_dir)
         coordinator = _make_coordinator(tmp_dir)
-        coordinator._ui.wait_for_user_message = AsyncMock(return_value="終了")
+        coordinator._ui.wait_for_session_selection = AsyncMock(return_value=None)
         session = SessionState()
         await coordinator._run_modify_session(session, "markdown")
         assert session.run_count == 0
@@ -107,7 +109,7 @@ async def test_run_modify_session_invalid_selection():
     with tempfile.TemporaryDirectory() as tmp_dir:
         _make_completed_session(tmp_dir)
         coordinator = _make_coordinator(tmp_dir)
-        coordinator._ui.wait_for_user_message = AsyncMock(return_value="99")
+        coordinator._ui.wait_for_session_selection = AsyncMock(return_value="nonexistent_id")
         session = SessionState()
         await coordinator._run_modify_session(session, "markdown")
         assert session.run_count == 0
@@ -148,7 +150,8 @@ async def test_run_modify_session_full_flow_with_approve(tmp_path):
     mock_ui.get_current_mode = MagicMock(return_value="modify")
     mock_ui.append_agent_message = AsyncMock()
     mock_ui.append_log = AsyncMock()
-    mock_ui.wait_for_user_message = AsyncMock(side_effect=["1", "図を追加してください"])
+    mock_ui.wait_for_session_selection = AsyncMock(return_value="20260101_120000_test")
+    mock_ui.wait_for_user_message = AsyncMock(return_value="図を追加してください")
 
     coordinator = ResearchCoordinator(workspace_dir=str(tmp_path), ui=mock_ui)
 

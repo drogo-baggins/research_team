@@ -76,6 +76,9 @@ class CompletedSession:
     created_at: str
     artifacts_dir: Path
     manifest_path: Path
+    report_path: str = ""
+    project_id: str | None = None
+    project_topic: str | None = None
 
 
 @dataclass
@@ -1338,6 +1341,9 @@ class ResearchCoordinator:
     ) -> None:
         session = SessionState()
 
+        if self._ui and hasattr(self._ui, "set_mode_change_callback"):
+            self._ui.set_mode_change_callback(self._on_mode_change)
+
         if not self._ui:
             topic = input("テーマを入力してください: ")
             request = ResearchRequest(topic=topic, depth=depth, output_format=output_format)
@@ -1476,28 +1482,17 @@ class ResearchCoordinator:
             await self._notify("ModifyAgent", "修正可能な成果物が見つかりません。パネルで「新規依頼」モードに切り替えてテーマを入力してください。")
             return
 
-        lines = ["修正するセッションを番号で選択してください：\n"]
-        for i, s in enumerate(completed, 1):
-            topic_short = s.topic[:40].replace("\n", " ")
-            lines.append(f"**{i}.** [{s.created_at}] {topic_short}（{s.style}）")
-        lines.append("\n番号を入力してください。キャンセルは「終了」と入力してください。")
-        await self._notify("ModifyAgent", "\n".join(lines))
-
-        sel_input = await self._ui.wait_for_user_message()
-        if _is_negative(sel_input):
+        session_id = await self._ui.wait_for_session_selection()
+        if session_id is None:
             await self._notify("ModifyAgent", "キャンセルしました。")
             return
-        try:
-            sel_idx = int(sel_input.strip()) - 1
-            if not (0 <= sel_idx < len(completed)):
-                raise ValueError
-        except ValueError:
-            await self._notify("ModifyAgent", "無効な番号です。再度「変更モード」からやり直してください。")
+
+        chosen = next((s for s in completed if s.session_id == session_id), None)
+        if chosen is None:
+            await self._notify("ModifyAgent", "選択されたセッションが見つかりません。")
             return
 
-        chosen = completed[sel_idx]
         topic_short = chosen.topic[:40].replace("\n", " ")
-
         original_content = await self._load_session_content(chosen)
         if original_content is None:
             return
@@ -1526,15 +1521,15 @@ class ResearchCoordinator:
                 revisions = audit.get("required_revisions", [])
                 mod_request = mod_request + "\n\n【Auditor指摘事項】\n" + "\n".join(f"- {r}" for r in revisions)
 
-        output_path_arg = Path(chosen.artifacts_dir).parent / f"report_{datetime.now().strftime('%Y%m%d')}.md"
-        output_path = MarkdownOutput(self._get_agent_workspace()).save(
+        output_path_arg = Path(chosen.report_path) if chosen.report_path else None
+        output_path = MarkdownOutput(self._workspace_dir).save(
             modified_content,
             chosen.topic,
             report_type=chosen.style,
             output_path=output_path_arg,
         )
         try:
-            await PDFOutput(self._get_agent_workspace()).save_async(modified_content, output_path)
+            await PDFOutput(self._workspace_dir).save_async(modified_content, output_path)
         except Exception as exc:
             logger.warning("PDF output failed in modify session: %s", exc)
 
@@ -1655,37 +1650,94 @@ class ResearchCoordinator:
         return None
 
     def list_completed_sessions(self) -> list[CompletedSession]:
-        results: list[CompletedSession] = []
+        best: dict[str, CompletedSession] = {}
+
         sessions_dir = Path(self._workspace_dir) / "sessions"
-        if not sessions_dir.exists():
-            return results
-        for manifest_path in sorted(
-            sessions_dir.glob("*/artifacts/manifest_run*.json"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        ):
-            try:
-                data = json.loads(manifest_path.read_text(encoding="utf-8"))
-                session_id = manifest_path.parent.parent.name
-                results.append(
-                    CompletedSession(
-                        session_id=session_id,
-                        topic=data.get("topic", ""),
-                        run_id=data.get("run_id", 1),
-                        style=data.get("style", "research_report"),
-                        created_at=datetime.fromtimestamp(manifest_path.stat().st_mtime).strftime(
-                            "%Y-%m-%d %H:%M"
-                        ),
-                        artifacts_dir=manifest_path.parent,
-                        manifest_path=manifest_path,
-                    )
-                )
-            except Exception:
-                continue
-        return results
+        if sessions_dir.exists():
+            for manifest_path in sessions_dir.glob("*/artifacts/manifest_run*.json"):
+                try:
+                    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    session_id = manifest_path.parent.parent.name
+                    run_id = data.get("run_id", 1)
+                    existing = best.get(session_id)
+                    if existing is None or run_id > existing.run_id:
+                        best[session_id] = CompletedSession(
+                            session_id=session_id,
+                            topic=data.get("topic", ""),
+                            run_id=run_id,
+                            style=data.get("style", "research_report"),
+                            created_at=datetime.fromtimestamp(manifest_path.stat().st_mtime).strftime(
+                                "%Y-%m-%d %H:%M"
+                            ),
+                            artifacts_dir=manifest_path.parent,
+                            manifest_path=manifest_path,
+                            report_path=data.get("report_path", ""),
+                        )
+                except Exception:
+                    continue
+
+        projects_dir = Path(self._workspace_dir) / "projects"
+        if projects_dir.exists():
+            for manifest_path in projects_dir.glob("*/files/artifacts/manifest_run*.json"):
+                try:
+                    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    project_id = manifest_path.parent.parent.parent.name
+                    session_id = f"project:{project_id}"
+                    run_id = data.get("run_id", 1)
+                    project_topic = ""
+                    try:
+                        meta_path = manifest_path.parent.parent.parent / "meta.json"
+                        if meta_path.exists():
+                            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                            project_topic = meta.get("topic", "")
+                    except Exception:
+                        pass
+                    existing = best.get(session_id)
+                    if existing is None or run_id > existing.run_id:
+                        best[session_id] = CompletedSession(
+                            session_id=session_id,
+                            topic=data.get("topic", ""),
+                            run_id=run_id,
+                            style=data.get("style", "research_report"),
+                            created_at=datetime.fromtimestamp(manifest_path.stat().st_mtime).strftime(
+                                "%Y-%m-%d %H:%M"
+                            ),
+                            artifacts_dir=manifest_path.parent,
+                            manifest_path=manifest_path,
+                            report_path=data.get("report_path", ""),
+                            project_id=project_id,
+                            project_topic=project_topic,
+                        )
+                except Exception:
+                    continue
+
+        return sorted(best.values(), key=lambda s: s.created_at, reverse=True)
 
     @staticmethod
     def _make_session_id(topic: str) -> str:
         time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         slug = re.sub(r"[^\w\u3040-\u30ff\u4e00-\u9fff]", "_", topic)[:20]
         return f"{time_str}_{slug}"
+
+    def _list_sessions_for_ui(self) -> list[dict]:
+        return [
+            {
+                "session_id": s.session_id,
+                "topic": s.topic,
+                "style": s.style,
+                "created_at": s.created_at,
+                "report_path": s.report_path,
+                "project_id": s.project_id,
+                "project_topic": s.project_topic,
+            }
+            for s in self.list_completed_sessions()
+        ]
+
+    async def _on_mode_change(self, mode: str) -> None:
+        if not self._ui or not hasattr(self._ui, "render_session_list"):
+            return
+        if mode == "modify":
+            sessions = self._list_sessions_for_ui()
+            await self._ui.render_session_list(sessions)
+        else:
+            await self._ui.render_session_list([])
