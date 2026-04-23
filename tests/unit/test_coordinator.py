@@ -328,6 +328,7 @@ async def test_wbs_is_displayed_via_ui(tmp_path):
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
          patch.object(coord._csm, "run", side_effect=_fake_run), \
          patch.object(coord._auditor, "run", side_effect=_fake_run), \
+         patch.object(coord._doc_editor, "run", side_effect=_fake_run), \
          patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
         await coord.run(ResearchRequest(topic="テストテーマ"))
 
@@ -413,6 +414,7 @@ async def test_checkpoint_created_after_specialist_pass(tmp_path):
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
          patch.object(coord._csm, "run", side_effect=fake_agent_run), \
          patch.object(coord._auditor, "run", side_effect=fake_agent_run), \
+         patch.object(coord._doc_editor, "run", side_effect=fake_agent_run), \
          patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
         await coord.run(ResearchRequest(topic="テストテーマ"))
 
@@ -454,6 +456,7 @@ async def test_specialist_drafts_saved_during_pass(tmp_path):
          patch.object(coord, "_stop_search_server", new=AsyncMock()), \
          patch.object(coord._csm, "run", side_effect=fake_agent_run), \
          patch.object(coord._auditor, "run", side_effect=fake_agent_run), \
+         patch.object(coord._doc_editor, "run", side_effect=fake_agent_run), \
          patch.object(DynamicSpecialistAgent, "run", fake_specialist_run):
         await coord.run(ResearchRequest(topic="テストテーマ"), session_id="test_session")
 

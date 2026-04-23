@@ -1511,19 +1511,23 @@ class ResearchCoordinator:
             return
 
         modified_content = original_content
-        for attempt in range(3):
-            await self._log("running", f"修正適用中... ({attempt + 1}/3)")
-            modify_prompt = self._build_modify_prompt(chosen.topic, modified_content, mod_request)
-            result = await self._stream_agent_output(self._modify_agent, modify_prompt, "ModifyAgent")
-            if result:
-                modified_content = result
+        await self._start_search_server()
+        try:
+            for attempt in range(3):
+                await self._log("running", f"修正適用中... ({attempt + 1}/3)")
+                modify_prompt = self._build_modify_prompt(chosen.topic, modified_content, mod_request)
+                result = await self._stream_agent_output(self._modify_agent, modify_prompt, "ModifyAgent")
+                if result:
+                    modified_content = result
 
-            audit = await self._run_audit(modified_content, chosen.topic)
-            if audit.get("decision") == "APPROVE":
-                break
-            if attempt < 2:
-                revisions = audit.get("required_revisions", [])
-                mod_request = mod_request + "\n\n【Auditor指摘事項】\n" + "\n".join(f"- {r}" for r in revisions)
+                audit = await self._run_audit(modified_content, chosen.topic)
+                if audit.get("decision") == "APPROVE":
+                    break
+                if attempt < 2:
+                    revisions = audit.get("required_revisions", [])
+                    mod_request = mod_request + "\n\n【Auditor指摘事項】\n" + "\n".join(f"- {r}" for r in revisions)
+        finally:
+            await self._stop_search_server()
 
         output_path_arg = Path(chosen.report_path) if chosen.report_path else None
         output_path = MarkdownOutput(self._workspace_dir).save(
