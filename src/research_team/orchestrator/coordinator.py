@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 from research_team.output.run_progress import RunProgress, SpecialistProgress
+from research_team.ui.control_ui import MODE_MODIFY_SENTINEL
 from research_team.agents.csm import ClientSuccessManager
 from research_team.agents.auditor import Auditor
 from research_team.agents.modify_agent import ModifyAgent
@@ -1428,6 +1429,9 @@ class ResearchCoordinator:
                 )
             topic = await self._ui.wait_for_user_message()
             await self._log("running", f"テーマ: {topic}")
+
+            if topic == MODE_MODIFY_SENTINEL:
+                continue
 
             if _is_negative(topic):
                 await self._ui.append_agent_message("CSM", "ありがとうございました。調査を終了します。")

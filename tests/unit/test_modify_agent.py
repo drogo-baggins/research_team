@@ -6,7 +6,7 @@ import tempfile
 import os
 
 from research_team.orchestrator.coordinator import ResearchCoordinator, CompletedSession, SessionState
-from research_team.ui.control_ui import ControlUI
+from research_team.ui.control_ui import ControlUI, MODE_MODIFY_SENTINEL
 
 
 def _make_coordinator(tmp_dir: str) -> ResearchCoordinator:
@@ -165,3 +165,20 @@ async def test_run_modify_session_full_flow_with_approve(tmp_path):
     assert session.run_count == 1
     mock_stream.assert_awaited_once()
     mock_audit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mode_selected_modify_puts_sentinel_in_queue():
+    mock_browser = MagicMock()
+    ui = ControlUI(mock_browser)
+    await ui._handle_signal({}, {"type": "mode_selected", "mode": "modify"})
+    assert not ui._chat_queue.empty()
+    assert ui._chat_queue.get_nowait() == MODE_MODIFY_SENTINEL
+
+
+@pytest.mark.asyncio
+async def test_mode_selected_new_request_does_not_put_sentinel():
+    mock_browser = MagicMock()
+    ui = ControlUI(mock_browser)
+    await ui._handle_signal({}, {"type": "mode_selected", "mode": "new_request"})
+    assert ui._chat_queue.empty()

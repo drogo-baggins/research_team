@@ -7,6 +7,8 @@ from playwright.async_api import Browser, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
 
+MODE_MODIFY_SENTINEL = "\x00__mode_modify__"
+
 
 _HTML_PATH = Path(__file__).parent / "control_page.html"
 
@@ -85,6 +87,8 @@ class ControlUI:
                 self._current_mode = payload.get("mode", "new_request")
                 if self._mode_change_callback is not None:
                     asyncio.create_task(self._mode_change_callback(self._current_mode))
+                if self._current_mode == "modify":
+                    self._chat_queue.put_nowait(MODE_MODIFY_SENTINEL)
             case "session_selected":
                 self._session_selection_result = payload.get("session_id")
                 self._session_selection_event.set()
