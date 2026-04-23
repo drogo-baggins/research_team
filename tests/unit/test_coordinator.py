@@ -662,7 +662,6 @@ async def test_run_interactive_additional_request_loop(tmp_path):
     coord._log = AsyncMock()
 
     user_inputs = [
-        "1",
         "テストテーマA",
         "別のテーマ追加",
         "終了",
@@ -676,6 +675,7 @@ async def test_run_interactive_additional_request_loop(tmp_path):
     mock_ui.append_agent_message = AsyncMock()
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
+    mock_ui.get_current_mode = MagicMock(return_value="new_request")
     coord._ui = mock_ui
 
     run_calls: list[ResearchRequest] = []
@@ -705,7 +705,7 @@ async def test_run_interactive_updates_session_last_run_id(tmp_path, monkeypatch
     state = SessionState()
     monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
 
-    user_inputs = ["1", "テストテーマ", "終了"]
+    user_inputs = ["テストテーマ", "終了"]
     input_iter = iter(user_inputs)
 
     async def fake_wait() -> str:
@@ -715,6 +715,7 @@ async def test_run_interactive_updates_session_last_run_id(tmp_path, monkeypatch
     mock_ui.append_agent_message = AsyncMock()
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
+    mock_ui.get_current_mode = MagicMock(return_value="new_request")
     coord._ui = mock_ui
     coord._log = AsyncMock()
 
@@ -741,7 +742,7 @@ async def test_parse_regenerate_intent_dispatches_in_interactive(tmp_path, monke
     state = SessionState(last_run_id=3, session_id="sess-1")
     monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
 
-    user_inputs = ["1", "コラム形式に変えて", "終了"]
+    user_inputs = ["コラム形式に変えて", "終了"]
     input_iter = iter(user_inputs)
 
     async def fake_wait() -> str:
@@ -751,6 +752,7 @@ async def test_parse_regenerate_intent_dispatches_in_interactive(tmp_path, monke
     mock_ui.append_agent_message = AsyncMock()
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
+    mock_ui.get_current_mode = MagicMock(return_value="new_request")
     coord._ui = mock_ui
     coord._log = AsyncMock()
     notify_calls: list[tuple[str, str]] = []
@@ -792,7 +794,7 @@ async def test_run_interactive_regenerate_manifest_missing_falls_back_to_run(tmp
     state = SessionState(last_run_id=2, session_id="sess-2")
     monkeypatch.setattr(coordinator_module, "SessionState", lambda: state)
 
-    user_inputs = ["1", "コラム形式に変えて", "終了"]
+    user_inputs = ["コラム形式に変えて", "終了"]
     input_iter = iter(user_inputs)
 
     async def fake_wait() -> str:
@@ -802,6 +804,7 @@ async def test_run_interactive_regenerate_manifest_missing_falls_back_to_run(tmp
     mock_ui.append_agent_message = AsyncMock()
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
+    mock_ui.get_current_mode = MagicMock(return_value="new_request")
     coord._ui = mock_ui
     coord._log = AsyncMock()
     notify_calls: list[tuple[str, str]] = []

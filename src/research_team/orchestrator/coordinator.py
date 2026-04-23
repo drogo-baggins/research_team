@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 from research_team.output.run_progress import RunProgress, SpecialistProgress
 from research_team.agents.csm import ClientSuccessManager
 from research_team.agents.auditor import Auditor
+from research_team.agents.modify_agent import ModifyAgent
 from research_team.agents.dynamic.factory import DynamicAgentFactory
 from research_team.agents.pm import ProjectManager as PMAgent
 from research_team.agents.team_builder import TeamBuilder
@@ -263,6 +264,7 @@ class ResearchCoordinator:
         self._csm = ClientSuccessManager()
         self._pm_agent = PMAgent()
         self._auditor = Auditor()
+        self._modify_agent = ModifyAgent()
         self._doc_editor = DocumentEditorAgent()
         self._project_manager = ProjectFileManager(workspace_dir=self._workspace_dir)
         self._team_builder = TeamBuilder()
@@ -1403,32 +1405,22 @@ class ResearchCoordinator:
                 await self._notify("CSM", "前回の進捗を破棄しました。新規調査を開始します。")
 
         while True:
+            mode = getattr(self._ui, "get_current_mode", lambda: "new_request")() if self._ui else "new_request"
+            if mode == "modify":
+                await self._run_modify_session(session, output_format)
+                continue
+
             if session.run_count == 0:
                 await self._ui.append_agent_message(
                     "CSM",
-                    "こんにちは！どちらの操作を行いますか？\n\n"
-                    "**1.** 新しいテーマを調査する\n"
-                    "**2.** 既存の成果物を修正する\n\n"
-                    "番号または調査テーマを直接入力してください。",
+                    "調査テーマを入力してください。",
                 )
-                mode_input = await self._ui.wait_for_user_message()
-                if _is_negative(mode_input):
-                    await self._ui.append_agent_message("CSM", "ありがとうございました。調査を終了します。")
-                    break
-                if mode_input.strip() in ("2", "２"):
-                    await self._run_modify_mode(session, output_format)
-                    continue
-                if mode_input.strip() in ("1", "１"):
-                    await self._ui.append_agent_message("CSM", "調査テーマを入力してください。")
-                    topic = await self._ui.wait_for_user_message()
-                else:
-                    topic = mode_input
             else:
                 await self._ui.append_agent_message(
                     "CSM",
                     "次のテーマまたは追加依頼を入力してください。終了する場合は「終了」と入力してください。",
                 )
-                topic = await self._ui.wait_for_user_message()
+            topic = await self._ui.wait_for_user_message()
             await self._log("running", f"テーマ: {topic}")
 
             if _is_negative(topic):
@@ -1476,6 +1468,117 @@ class ResearchCoordinator:
                 await self._log("running", err_msg)
                 await self._ui.append_log("running", tb)
                 raise
+
+    async def _run_modify_session(self, session: SessionState, output_format: str) -> None:
+        assert self._ui is not None
+        completed = self.list_completed_sessions()
+        if not completed:
+            await self._notify("ModifyAgent", "修正可能な成果物が見つかりません。パネルで「新規依頼」モードに切り替えてテーマを入力してください。")
+            return
+
+        lines = ["修正するセッションを番号で選択してください：\n"]
+        for i, s in enumerate(completed, 1):
+            topic_short = s.topic[:40].replace("\n", " ")
+            lines.append(f"**{i}.** [{s.created_at}] {topic_short}（{s.style}）")
+        lines.append("\n番号を入力してください。キャンセルは「終了」と入力してください。")
+        await self._notify("ModifyAgent", "\n".join(lines))
+
+        sel_input = await self._ui.wait_for_user_message()
+        if _is_negative(sel_input):
+            await self._notify("ModifyAgent", "キャンセルしました。")
+            return
+        try:
+            sel_idx = int(sel_input.strip()) - 1
+            if not (0 <= sel_idx < len(completed)):
+                raise ValueError
+        except ValueError:
+            await self._notify("ModifyAgent", "無効な番号です。再度「変更モード」からやり直してください。")
+            return
+
+        chosen = completed[sel_idx]
+        topic_short = chosen.topic[:40].replace("\n", " ")
+
+        original_content = await self._load_session_content(chosen)
+        if original_content is None:
+            return
+
+        await self._notify(
+            "ModifyAgent",
+            f"「{topic_short}」を読み込みました。\n修正内容を詳しく入力してください。",
+        )
+        mod_request = await self._ui.wait_for_user_message()
+        if _is_negative(mod_request):
+            await self._notify("ModifyAgent", "キャンセルしました。")
+            return
+
+        modified_content = original_content
+        for attempt in range(3):
+            await self._log("running", f"修正適用中... ({attempt + 1}/3)")
+            modify_prompt = self._build_modify_prompt(chosen.topic, modified_content, mod_request)
+            result = await self._stream_agent_output(self._modify_agent, modify_prompt, "ModifyAgent")
+            if result:
+                modified_content = result
+
+            audit = await self._run_audit(modified_content, chosen.topic)
+            if audit.get("decision") == "APPROVE":
+                break
+            if attempt < 2:
+                revisions = audit.get("required_revisions", [])
+                mod_request = mod_request + "\n\n【Auditor指摘事項】\n" + "\n".join(f"- {r}" for r in revisions)
+
+        output_path_arg = Path(chosen.artifacts_dir).parent / f"report_{datetime.now().strftime('%Y%m%d')}.md"
+        output_path = MarkdownOutput(self._get_agent_workspace()).save(
+            modified_content,
+            chosen.topic,
+            report_type=chosen.style,
+            output_path=output_path_arg,
+        )
+        try:
+            await PDFOutput(self._get_agent_workspace()).save_async(modified_content, output_path)
+        except Exception as exc:
+            logger.warning("PDF output failed in modify session: %s", exc)
+
+        session.session_id = chosen.session_id
+        session.last_report_path = output_path
+        session.run_count += 1
+        await self._notify("ModifyAgent", f"✅ レポートを更新しました:\n`{output_path}`")
+        await self._log("done", f"変更完了: {output_path}")
+
+    async def _load_session_content(self, chosen: "CompletedSession") -> str | None:
+        from research_team.output.run_manifest import RunManifest
+        from research_team.output.artifact_reconstructor import ArtifactReconstructor
+
+        manifest_path = chosen.artifacts_dir / f"manifest_run{chosen.run_id}.json"
+        if not manifest_path.exists():
+            manifest_path = chosen.manifest_path
+        try:
+            manifest = RunManifest.load(manifest_path)
+            content = ArtifactReconstructor().reconstruct(manifest)
+            if content:
+                return content
+        except Exception as exc:
+            logger.warning("ArtifactReconstructor failed (%s), falling back to report_path", exc)
+
+        try:
+            manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            report_path = Path(manifest_data.get("report_path", ""))
+            if report_path.exists():
+                return report_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            logger.warning("Fallback report_path read failed: %s", exc)
+
+        await self._notify("ModifyAgent", "⚠️ 成果物の読み込みに失敗しました。手動でファイルを確認してください。")
+        return None
+
+    @staticmethod
+    def _build_modify_prompt(topic: str, content: str, modification_request: str) -> str:
+        return (
+            f"以下は「{topic}」に関する調査レポートです。\n\n"
+            f"【修正依頼】\n{modification_request}\n\n"
+            f"【元のレポート】\n{content[:40000]}\n\n"
+            f"上記修正依頼に従い、レポート全体を修正して返してください。\n"
+            f"修正後の完全なレポート本文のみを出力し、完了報告や説明文は含めないこと。"
+        )
 
     async def _run_modify_mode(self, session: SessionState, output_format: str) -> None:
         assert self._ui is not None

@@ -22,6 +22,21 @@
       overflow: hidden;
     }
 
+    /* ==================== モード切替 ==================== */
+    .mode-toggle {
+      display: flex; flex-shrink: 0;
+      border-bottom: 2px solid #0f3460;
+      background: #16213e;
+    }
+    .mode-btn {
+      flex: 1; padding: 9px 0; font-size: 12px; font-weight: 600;
+      background: transparent; border: none; color: #5070a0; cursor: pointer;
+      border-bottom: 2px solid transparent; margin-bottom: -2px;
+      transition: color .15s, border-color .15s;
+    }
+    .mode-btn:hover { color: #90b0e0; background: rgba(255,255,255,0.03); }
+    .mode-btn.active { color: #60a5fa; border-bottom-color: #3b82f6; }
+
     /* ==================== 左: チャットペイン ==================== */
     .chat-pane {
       display: flex; flex-direction: column;
@@ -237,6 +252,11 @@
 
     <!-- 左: チャットペイン -->
     <div class="chat-pane">
+      <!-- モード切替タブ -->
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeBtnNew" onclick="selectMode('new_request')">🆕 新規依頼</button>
+        <button class="mode-btn" id="modeBtnModify" onclick="selectMode('modify')">✏️ 変更モード</button>
+      </div>
       <div class="chat-messages" id="chatMessages"></div>
       <!-- 既存コードとの互換のため非表示DOM維持 -->
       <div id="progressLog" style="display:none"></div>
@@ -334,6 +354,12 @@
   </div>
 
   <script>
+    function selectMode(mode) {
+      document.getElementById('modeBtnNew').classList.toggle('active', mode === 'new_request');
+      document.getElementById('modeBtnModify').classList.toggle('active', mode === 'modify');
+      window.__rt_signal({ type: 'mode_selected', mode: mode });
+    }
+
     // ── チャット ──────────────────────────────────────────────
 
     function appendMessage(sender, text, isUser) {

@@ -25,6 +25,7 @@ class ControlUI:
         self._wbs_approval_result: dict | None = None
         self._on_approval_start: Callable[[], None] | None = None
         self._on_approval_end: Callable[[], None] | None = None
+        self._current_mode: str = "new_request"
 
     def set_approval_hooks(
         self,
@@ -76,6 +77,8 @@ class ControlUI:
         match payload.get("type"):
             case "chat":
                 await self._chat_queue.put(payload.get("message", ""))
+            case "mode_selected":
+                self._current_mode = payload.get("mode", "new_request")
             case "approval_done":
                 self._approval_result = payload.get("approved", False)
                 self._approval_event.set()
@@ -164,6 +167,9 @@ class ControlUI:
     async def wait_for_user_message(self) -> str:
         msg = await self._chat_queue.get()
         return msg
+
+    def get_current_mode(self) -> str:
+        return self._current_mode
 
     async def show_wbs_approval(self, depth: str, style: str, locales: list[str] | None = None) -> dict | None:
         self._wbs_approval_event.clear()
