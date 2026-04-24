@@ -218,6 +218,19 @@ _STYLE_INSTRUCTIONS: dict[str, str] = {
         "章タイトル・節タイトルを設け、詳細かつ叙述的に展開してください。"
         "導入・本論・まとめの構成を守り、読者が通読できる完成した章にしてください。"
     ),
+    "paper": (
+        "学術論文（Academic Paper）形式で記述してください。"
+        "以下のセクション構成を厳守してください：\n"
+        "1. ## Abstract（100-250語：研究目的・手法・主要結果・結論を含む）\n"
+        "2. ## Introduction（背景・問題設定・本論文の貢献）\n"
+        "3. ## Related Work（関連研究・既存手法の整理）\n"
+        "4. ## Methodology（調査・分析手法の説明）\n"
+        "5. ## Results（主要な発見・データ・事実の提示）\n"
+        "6. ## Discussion（結果の解釈・限界・含意）\n"
+        "7. ## Conclusion（まとめと今後の課題）\n"
+        "8. ## References（引用文献一覧：[著者名 発行年] URL 形式）\n"
+        "文体は客観的・学術的にし、主張には必ず出典を付けてください。"
+    ),
 }
 
 _STYLES_WITHOUT_EXEC_SUMMARY = {"book_chapter", "magazine_column"}
@@ -627,6 +640,22 @@ class ResearchCoordinator:
             f"\n\n【重要】サマリー本文のみを出力してください。説明や前置きは不要です。"
         )
 
+    def _build_abstract_prompt(self, topic: str, content: str) -> str:
+        max_chars = os.environ.get("RT_MAX_SUMMARY_CHARS")
+        body = content[:int(max_chars)] if max_chars else content
+        return (
+            f"以下は「{topic}」についての専門家調査結果です。\n\n"
+            f"{body}\n\n"
+            f"この調査結果から、学術論文の Abstract（要旨）を書いてください。\n"
+            f"Abstract は 100-250語で、以下の4要素を必ず含めてください：\n"
+            f"1. 研究目的・問題設定\n"
+            f"2. 調査・分析手法\n"
+            f"3. 主要な発見・結果\n"
+            f"4. 結論・意義\n"
+            f"\n【重要】Abstract 本文のみを出力してください。見出し（## Abstract）は含めず、"
+            f"説明や前置きも不要です。日本語で記述してください。"
+        )
+
     @staticmethod
     def _strip_chapter_prefix(title: str) -> str:
         import re as _re
@@ -1013,6 +1042,13 @@ class ResearchCoordinator:
             formatted = await self._stream_agent_output(self._csm, format_prompt, "CSM")
             if formatted:
                 combined_content = formatted
+        elif request.style == "paper":
+            abstract_prompt = self._build_abstract_prompt(topic, combined_content)
+            abstract = await self._stream_agent_output(self._csm, abstract_prompt, "CSM")
+            if abstract:
+                combined_content = (
+                    f"## Abstract\n\n{abstract}\n\n---\n\n{combined_content}"
+                )
         else:
             summary_prompt = self._build_summary_prompt(topic, combined_content)
             exec_summary = await self._stream_agent_output(self._csm, summary_prompt, "CSM")

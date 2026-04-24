@@ -36,12 +36,25 @@ _STYLE_EDIT_INSTRUCTIONS: dict[str, str] = {
         "メモのタイトル・件名が内容を端的に示しているか確認・改善してください。"
         "結論・提言が冒頭に明確に配置されていることを確認してください。"
     ),
+    "paper": (
+        "学術論文として完成させてください。"
+        "Abstract（100-250語）が冒頭に存在するか確認し、不足があれば補完してください。"
+        "Introduction / Related Work / Methodology / Results / Discussion / Conclusion / References "
+        "の各セクション見出しが揃っているか確認・整備してください。"
+        "References セクションは '[著者名 発行年] タイトル. URL' 形式で統一してください。"
+        "LLMの作業説明・謝罪文は削除し、論文本文のみを残してください。"
+    ),
 }
 
 
 class DocumentEditorAgent(BaseResearchAgent):
-    name = "DocumentEditor"
-    skill_path = _SKILLS_DIR / "document_editor"
+    @property
+    def name(self) -> str:
+        return "DocumentEditor"
+
+    @property
+    def skill_path(self) -> Path:
+        return _SKILLS_DIR / "document_editor"
 
 
 def _build_edit_prompt(topic: str, content: str, style: str) -> str:
