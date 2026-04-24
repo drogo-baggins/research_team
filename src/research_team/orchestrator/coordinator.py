@@ -276,6 +276,7 @@ class ResearchCoordinator:
         self._quality_loop = QualityLoop()
         self._search_server: SearchServer | None = None
         self._search_port: int = 0
+        self._session_artifacts_dir: str | None = None
 
     def _get_agent_workspace(self) -> str:
         active_id = self._project_manager.get_active_id()
@@ -488,7 +489,7 @@ class ResearchCoordinator:
                 try:
                     async for event in agent.run(
                         message,
-                        workspace_dir=self._get_agent_workspace(),
+                        workspace_dir=self._session_artifacts_dir or self._get_agent_workspace(),
                         search_port=self._search_port,
                     ):
                         events.append(event)
@@ -764,6 +765,31 @@ class ResearchCoordinator:
         resume_from: RunProgress | None = None,
         resume_writer: "ArtifactWriter | None" = None,
     ) -> ResearchResult:
+        preliminary_writer = resume_writer or self._make_artifact_writer(session_id)
+        self._session_artifacts_dir = str(preliminary_writer._dir)
+        try:
+            return await self._run_research_inner(
+                topic=topic,
+                request=request,
+                reference_content=reference_content,
+                run_id=run_id,
+                session_id=session_id,
+                resume_from=resume_from,
+                resume_writer=preliminary_writer,
+            )
+        finally:
+            self._session_artifacts_dir = None
+
+    async def _run_research_inner(
+        self,
+        topic: str,
+        request: ResearchRequest,
+        reference_content: str = "",
+        run_id: int = 0,
+        session_id: str = "",
+        resume_from: RunProgress | None = None,
+        resume_writer: "ArtifactWriter | None" = None,
+    ) -> ResearchResult:
         if resume_from:
             specialists = [
                 {"name": sp.name, "expertise": sp.expertise}
@@ -778,7 +804,7 @@ class ResearchCoordinator:
                     locales=request.locales,
                 )
             await self._push_wbs(topic, specialists, run_id=run_id, style=request.style)
-            artifact_writer: ArtifactWriter = resume_writer or self._make_artifact_writer(session_id)
+            artifact_writer: ArtifactWriter = resume_writer  # type: ignore[assignment]
             progress = resume_from
         else:
             pm_output = await self._stream_agent_output(
@@ -819,7 +845,7 @@ class ResearchCoordinator:
             ):
                 raise ResearchCancelledError
 
-            artifact_writer = self._make_artifact_writer(session_id)
+            artifact_writer = resume_writer  # type: ignore[assignment]
             try:
                 wbs_path = artifact_writer.write_wbs(run_id, topic, specialists)
                 await self._notify(
@@ -1117,6 +1143,23 @@ class ResearchCoordinator:
         manifest_path = Path(request.artifacts_dir) / f"manifest_run{request.run_id}.json"
         if not manifest_path.exists():
             raise FileNotFoundError(f"RunManifest が見つかりません: {manifest_path}")
+
+        self._session_artifacts_dir = request.artifacts_dir
+        try:
+            return await self._run_regenerate_inner(request, regen_request_text, session_id)
+        finally:
+            self._session_artifacts_dir = None
+
+    async def _run_regenerate_inner(
+        self,
+        request: RegenerateRequest,
+        regen_request_text: str,
+        session_id: str,
+    ) -> ResearchResult:
+        from research_team.output.run_manifest import RunManifest
+        from research_team.output.artifact_reconstructor import ArtifactReconstructor
+
+        manifest_path = Path(request.artifacts_dir) / f"manifest_run{request.run_id}.json"
 
         manifest = RunManifest.load(manifest_path)
         style = request.style or manifest.style
