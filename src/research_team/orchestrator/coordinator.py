@@ -1064,11 +1064,11 @@ class ResearchCoordinator:
             on_iteration=run_research,
         )
 
-        output_path = MarkdownOutput(self._get_agent_workspace()).save(
+        output_path = MarkdownOutput(str(artifact_writer._dir)).save(
             combined_content, topic, report_type=request.style
         )
         try:
-            await PDFOutput(self._get_agent_workspace()).save_async(combined_content, output_path)
+            await PDFOutput(str(artifact_writer._dir)).save_async(combined_content, output_path)
         except Exception as exc:
             logger.warning("PDF output failed: %s", exc)
         try:
@@ -1145,14 +1145,14 @@ class ResearchCoordinator:
 
         # 上書き or 新規保存
         output_path_arg = Path(manifest.report_path) if request.overwrite_report else None
-        output_path = MarkdownOutput(self._get_agent_workspace()).save(
+        output_path = MarkdownOutput(request.artifacts_dir).save(
             combined_content,
             topic,
             report_type=style,
             output_path=output_path_arg,
         )
         try:
-            await PDFOutput(self._get_agent_workspace()).save_async(combined_content, output_path)
+            await PDFOutput(request.artifacts_dir).save_async(combined_content, output_path)
         except Exception as exc:
             logger.warning("PDF output failed: %s", exc)
 
