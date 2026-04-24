@@ -38,9 +38,10 @@ _STYLE_EDIT_INSTRUCTIONS: dict[str, str] = {
     ),
     "paper": (
         "学術論文として完成させてください。"
-        "Abstract（100-250語）が冒頭に存在するか確認し、不足があれば補完してください。"
+        "冒頭に ## Abstract（英語・100-250 words）と ## 要旨（日本語・Abstractの和訳）が存在するか確認し、不足があれば補完してください。"
+        "Abstract は必ず英語で記述してください。要旨は必ず日本語で記述してください。"
         "Introduction / Related Work / Methodology / Results / Discussion / Conclusion / References "
-        "の各セクション見出しが揃っているか確認・整備してください。"
+        "の各セクション見出しが揃っているか確認・整備してください（これらは日本語で記述）。"
         "References セクションは '[著者名 発行年] タイトル. URL' 形式で統一してください。"
         "LLMの作業説明・謝罪文は削除し、論文本文のみを残してください。"
     ),

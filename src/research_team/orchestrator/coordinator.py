@@ -221,14 +221,16 @@ _STYLE_INSTRUCTIONS: dict[str, str] = {
     "paper": (
         "学術論文（Academic Paper）形式で記述してください。"
         "以下のセクション構成を厳守してください：\n"
-        "1. ## Abstract（100-250語：研究目的・手法・主要結果・結論を含む）\n"
-        "2. ## Introduction（背景・問題設定・本論文の貢献）\n"
-        "3. ## Related Work（関連研究・既存手法の整理）\n"
-        "4. ## Methodology（調査・分析手法の説明）\n"
-        "5. ## Results（主要な発見・データ・事実の提示）\n"
-        "6. ## Discussion（結果の解釈・限界・含意）\n"
-        "7. ## Conclusion（まとめと今後の課題）\n"
-        "8. ## References（引用文献一覧：[著者名 発行年] URL 形式）\n"
+        "1. ## Abstract（英語・100-250語：研究目的・手法・主要結果・結論を含む。MUST be written in English.）\n"
+        "2. ## 要旨（日本語・Abstractと同内容の和訳。必ず日本語で記述すること。）\n"
+        "3. ## Introduction（日本語：背景・問題設定・本論文の貢献）\n"
+        "4. ## Related Work（日本語：関連研究・既存手法の整理）\n"
+        "5. ## Methodology（日本語：調査・分析手法の説明）\n"
+        "6. ## Results（日本語：主要な発見・データ・事実の提示）\n"
+        "7. ## Discussion（日本語：結果の解釈・限界・含意）\n"
+        "8. ## Conclusion（日本語：まとめと今後の課題）\n"
+        "9. ## References（[著者名 発行年] タイトル. URL 形式）\n"
+        "Abstract のみ英語、それ以外は日本語で記述してください。"
         "文体は客観的・学術的にし、主張には必ず出典を付けてください。"
     ),
 }
@@ -646,15 +648,39 @@ class ResearchCoordinator:
         return (
             f"以下は「{topic}」についての専門家調査結果です。\n\n"
             f"{body}\n\n"
-            f"この調査結果から、学術論文の Abstract（要旨）を書いてください。\n"
-            f"Abstract は 100-250語で、以下の4要素を必ず含めてください：\n"
-            f"1. 研究目的・問題設定\n"
-            f"2. 調査・分析手法\n"
-            f"3. 主要な発見・結果\n"
-            f"4. 結論・意義\n"
-            f"\n【重要】Abstract 本文のみを出力してください。見出し（## Abstract）は含めず、"
-            f"説明や前置きも不要です。日本語で記述してください。"
+            f"この調査結果から、学術論文の Abstract と要旨を生成してください。\n\n"
+            f"【出力形式】以下の2ブロックを順番に出力してください：\n\n"
+            f"---ABSTRACT---\n"
+            f"（英語で記述。100-250 words。以下の4要素を含む：\n"
+            f"1. Research objective / problem statement\n"
+            f"2. Methodology / research approach\n"
+            f"3. Key findings / results\n"
+            f"4. Conclusion / implications）\n\n"
+            f"---YOSHI---\n"
+            f"（日本語で記述。上記 Abstract の和訳。100-250字程度。）\n\n"
+            f"【重要】\n"
+            f"- Abstract は必ず英語で書くこと。日本語を混在させないこと。\n"
+            f"- 要旨は必ず日本語で書くこと。\n"
+            f"- 見出し（## Abstract, ## 要旨）・説明・前置きは含めないこと。\n"
+            f"- ---ABSTRACT--- と ---YOSHI--- のセパレータはそのまま出力すること。"
         )
+
+    @staticmethod
+    def _parse_abstract_output(raw: str) -> tuple[str, str]:
+        """Parse LLM output containing ---ABSTRACT--- and ---YOSHI--- separators.
+
+        Returns (english_abstract, japanese_yoshi). Falls back gracefully if the
+        LLM does not follow the expected format.
+        """
+        abstract_marker = "---ABSTRACT---"
+        yoshi_marker = "---YOSHI---"
+        a_idx = raw.find(abstract_marker)
+        y_idx = raw.find(yoshi_marker)
+        if a_idx != -1 and y_idx != -1 and a_idx < y_idx:
+            en = raw[a_idx + len(abstract_marker):y_idx].strip()
+            ja = raw[y_idx + len(yoshi_marker):].strip()
+            return en, ja
+        return raw.strip(), ""
 
     @staticmethod
     def _strip_chapter_prefix(title: str) -> str:
@@ -1044,11 +1070,11 @@ class ResearchCoordinator:
                 combined_content = formatted
         elif request.style == "paper":
             abstract_prompt = self._build_abstract_prompt(topic, combined_content)
-            abstract = await self._stream_agent_output(self._csm, abstract_prompt, "CSM")
-            if abstract:
-                combined_content = (
-                    f"## Abstract\n\n{abstract}\n\n---\n\n{combined_content}"
-                )
+            abstract_raw = await self._stream_agent_output(self._csm, abstract_prompt, "CSM")
+            if abstract_raw:
+                en_abstract, ja_yoshi = self._parse_abstract_output(abstract_raw)
+                header = f"## Abstract\n\n{en_abstract}\n\n## 要旨\n\n{ja_yoshi}"
+                combined_content = f"{header}\n\n---\n\n{combined_content}"
         else:
             summary_prompt = self._build_summary_prompt(topic, combined_content)
             exec_summary = await self._stream_agent_output(self._csm, summary_prompt, "CSM")
