@@ -1090,11 +1090,11 @@ class ResearchCoordinator:
             on_iteration=run_research,
         )
 
-        output_path = MarkdownOutput(str(artifact_writer._dir)).save(
+        output_path = MarkdownOutput(str(artifact_writer._dir.parent)).save(
             combined_content, topic, report_type=request.style
         )
         try:
-            await PDFOutput(str(artifact_writer._dir)).save_async(combined_content, output_path)
+            await PDFOutput(str(artifact_writer._dir.parent)).save_async(combined_content, output_path)
         except Exception as exc:
             logger.warning("PDF output failed: %s", exc)
         try:
@@ -1188,14 +1188,15 @@ class ResearchCoordinator:
 
         # 上書き or 新規保存
         output_path_arg = Path(manifest.report_path) if request.overwrite_report else None
-        output_path = MarkdownOutput(request.artifacts_dir).save(
+        session_dir = str(Path(request.artifacts_dir).parent)
+        output_path = MarkdownOutput(session_dir).save(
             combined_content,
             topic,
             report_type=style,
             output_path=output_path_arg,
         )
         try:
-            await PDFOutput(request.artifacts_dir).save_async(combined_content, output_path)
+            await PDFOutput(session_dir).save_async(combined_content, output_path)
         except Exception as exc:
             logger.warning("PDF output failed: %s", exc)
 
@@ -1573,14 +1574,14 @@ class ResearchCoordinator:
             await self._stop_search_server()
 
         output_path_arg = Path(chosen.report_path) if chosen.report_path else None
-        output_path = MarkdownOutput(self._workspace_dir).save(
+        output_path = MarkdownOutput(str(chosen.artifacts_dir.parent)).save(
             modified_content,
             chosen.topic,
             report_type=chosen.style,
             output_path=output_path_arg,
         )
         try:
-            await PDFOutput(self._workspace_dir).save_async(modified_content, output_path)
+            await PDFOutput(str(chosen.artifacts_dir.parent)).save_async(modified_content, output_path)
         except Exception as exc:
             logger.warning("PDF output failed in modify session: %s", exc)
 
