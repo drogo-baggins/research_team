@@ -307,6 +307,29 @@
 
 ---
 
+## カテゴリ: 出力
+
+### US-19: 学術論文フォーマットでレポートを出力できる
+
+**As a** 研究者・学術ユーザー  
+**I want to** 調査結果を Abstract / Introduction / Related Work / Methodology / Results / Discussion / Conclusion / References の構成で出力したい  
+**So that** 学術論文・技術レポートとして直接利用できる成果物を得られる
+
+> **設計方針:** 既存の4スタイル（research_report / executive_memo / magazine_column / book_chapter）と同じ拡張ポイント（`_STYLE_INSTRUCTIONS`, `_STYLE_EDIT_INSTRUCTIONS`, CLI `--style`）に `paper` を追加する。Abstract は Executive Summary とは別ロジック（専用プロンプト）で生成し、References は URL ベースから著者・年式フォーマットへ変換する。
+
+| # | タスク | 状態 |
+|---|---|---|
+| 19-1 | `coordinator.py` の `_STYLE_INSTRUCTIONS` に `"paper"` エントリを追加（セクション構成・文体・引用スタイル指示） | ✅ 実装済 |
+| 19-2 | `document_editor.py` の `_STYLE_EDIT_INSTRUCTIONS` に `"paper"` エントリを追加（Abstract 長・見出し確認・References 整形） | ✅ 実装済 |
+| 19-3 | `coordinator.py` の `_STYLES_WITHOUT_EXEC_SUMMARY` に `"paper"` を追加し、Executive Summary の代わりに `_build_abstract_prompt()` で Abstract を生成する | ✅ 実装済 |
+| 19-4 | `coordinator.py` に `_build_abstract_prompt()` を実装（Abstract: 100-250語、研究目的・手法・主要結果・結論を含む） | ✅ 実装済 |
+| 19-5 | `specialist.md.template` に論文スタイル向け引用指示を追加（`[著者名 発行年]` 形式 + URL 併記ルール） | ✅ 実装済 |
+| 19-6 | CLI `--style` オプションの選択肢に `paper` を追加（`cli/main.py`） | ✅ 実装済 |
+| 19-7 | WBS 承認 UI の出力スタイル選択肢に `paper` を追加（`control_ui.py` / JS側） | ✅ 実装済 |
+| 19-8 | `tests/unit/test_paper_style.py` — スタイル指示生成・Abstract プロンプト・DocumentEditor 整形のユニットテスト | ✅ 実装済 |
+
+---
+
 ## 実装状況サマリー
 
 | カテゴリ | ユーザーストーリー | ✅ 実装済 | ⚠️ 部品あり | ❌ 未実装 |
@@ -329,4 +352,5 @@
 | 拡張機能 | US-12: Python サンドボックス | 0 | 0 | 3 |
 | 監査 | US-17: PDF オリジナル保存 | 0 | 0 | 6 |
 | 出力 | US-18: Mermaid グラフ付き PDF | 5 | 0 | 0 |
-| | **合計** | **51** | **6** | **28** |
+| 出力 | US-19: 学術論文フォーマット出力 | 8 | 0 | 0 |
+| | **合計** | **59** | **6** | **28** |

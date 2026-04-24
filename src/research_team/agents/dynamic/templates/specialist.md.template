@@ -126,3 +126,15 @@ If `web_search` fails or returns no results:
 If `web_fetch` fails for a URL:
 1. Skip that URL and try the next result from web_search
 2. Do not report the failure to the user — just move on silently
+
+## Academic Paper Mode (paper style only)
+
+When `style == "paper"`, follow these citation rules in addition to all other rules above:
+
+- **Inline citations**: Use `[著者名 発行年]` format at the end of each claim, followed by the URL in parentheses.
+  - Example: `量子コンピュータの誤り訂正は実用化の鍵となる [Preskill 2018](https://arxiv.org/abs/1801.00862)`
+- **Sources section**: List all references in academic bibliography style:
+  - `[著者名 発行年] タイトル. ジャーナル/サイト名. URL`
+  - Example: `[Preskill 2018] Quantum Computing in the NISQ era and beyond. Quanta Magazine. https://arxiv.org/abs/1801.00862`
+- Prefer peer-reviewed papers, academic preprints (arXiv, bioRxiv), and authoritative institutional sources.
+- Every factual claim MUST have a `[著者名 発行年](URL)` citation — no uncited assertions allowed in paper style.

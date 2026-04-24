@@ -1418,6 +1418,7 @@ class ResearchCoordinator:
     async def run_interactive(
         self,
         depth: str = "standard",
+        style: str = "research_report",
         output_format: str = "markdown",
     ) -> None:
         session = SessionState()
@@ -1427,7 +1428,7 @@ class ResearchCoordinator:
 
         if not self._ui:
             topic = input("テーマを入力してください: ")
-            request = ResearchRequest(topic=topic, depth=depth, output_format=output_format)
+            request = ResearchRequest(topic=topic, depth=depth, style=style, output_format=output_format)
             session_id = self._make_session_id(topic)
             await self.run(request, run_id=0, session_id=session_id)
             return
