@@ -443,10 +443,10 @@
       row.onclick = () => {
         document.querySelectorAll('.session-row').forEach(r => r.classList.remove('active'));
         row.classList.add('active');
-        window.__rt_signal({ type: 'session_selected', session_id: s.session_id });
+        window.__rt_signal({ type: 'session_selected', session_id: s.run_key });
       };
       const topic = (s.topic || '').replace(/\n/g, ' ').substring(0, 40);
-      const styleLabel = { research_report: 'レポート', executive_memo: 'メモ', magazine_column: 'コラム', book_chapter: '書籍' }[s.style] || s.style;
+      const styleLabel = { research_report: 'レポート', executive_memo: 'メモ', magazine_column: 'コラム', book_chapter: '書籍', paper: '論文' }[s.style] || s.style;
       row.innerHTML = `<div class="session-topic">${escapeHtml(topic)}</div>`
                     + `<div class="session-meta">${escapeHtml(s.created_at)} · ${escapeHtml(styleLabel)}</div>`;
       return row;

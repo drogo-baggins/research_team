@@ -78,6 +78,7 @@ class CompletedSession:
     artifacts_dir: Path
     manifest_path: Path
     report_path: str = ""
+    run_key: str = ""
     project_id: str | None = None
     project_topic: str | None = None
 
@@ -1593,12 +1594,14 @@ class ResearchCoordinator:
             await self._notify("ModifyAgent", "修正可能な成果物が見つかりません。パネルで「新規依頼」モードに切り替えてテーマを入力してください。")
             return
 
-        session_id = await self._ui.wait_for_session_selection()
-        if session_id is None:
+        run_key = await self._ui.wait_for_session_selection()
+        if run_key is None:
             await self._notify("ModifyAgent", "キャンセルしました。")
             return
 
-        chosen = next((s for s in completed if s.session_id == session_id), None)
+        chosen = next((s for s in completed if s.run_key == run_key), None)
+        if chosen is None:
+            chosen = next((s for s in completed if s.session_id == run_key), None)
         if chosen is None:
             await self._notify("ModifyAgent", "選択されたセッションが見つかりません。")
             return
@@ -1765,7 +1768,7 @@ class ResearchCoordinator:
         return None
 
     def list_completed_sessions(self) -> list[CompletedSession]:
-        best: dict[str, CompletedSession] = {}
+        results: list[CompletedSession] = []
 
         sessions_dir = Path(self._workspace_dir) / "sessions"
         if sessions_dir.exists():
@@ -1774,9 +1777,8 @@ class ResearchCoordinator:
                     data = json.loads(manifest_path.read_text(encoding="utf-8"))
                     session_id = manifest_path.parent.parent.name
                     run_id = data.get("run_id", 1)
-                    existing = best.get(session_id)
-                    if existing is None or run_id > existing.run_id:
-                        best[session_id] = CompletedSession(
+                    results.append(
+                        CompletedSession(
                             session_id=session_id,
                             topic=data.get("topic", ""),
                             run_id=run_id,
@@ -1787,7 +1789,9 @@ class ResearchCoordinator:
                             artifacts_dir=manifest_path.parent,
                             manifest_path=manifest_path,
                             report_path=data.get("report_path", ""),
+                            run_key=f"{session_id}::run{run_id}",
                         )
+                    )
                 except Exception:
                     continue
 
@@ -1807,9 +1811,8 @@ class ResearchCoordinator:
                             project_topic = meta.get("topic", "")
                     except Exception:
                         pass
-                    existing = best.get(session_id)
-                    if existing is None or run_id > existing.run_id:
-                        best[session_id] = CompletedSession(
+                    results.append(
+                        CompletedSession(
                             session_id=session_id,
                             topic=data.get("topic", ""),
                             run_id=run_id,
@@ -1820,13 +1823,15 @@ class ResearchCoordinator:
                             artifacts_dir=manifest_path.parent,
                             manifest_path=manifest_path,
                             report_path=data.get("report_path", ""),
+                            run_key=f"{session_id}::run{run_id}",
                             project_id=project_id,
                             project_topic=project_topic,
                         )
+                    )
                 except Exception:
                     continue
 
-        return sorted(best.values(), key=lambda s: s.created_at, reverse=True)
+        return sorted(results, key=lambda s: s.created_at, reverse=True)
 
     @staticmethod
     def _make_session_id(topic: str) -> str:
@@ -1838,6 +1843,7 @@ class ResearchCoordinator:
         return [
             {
                 "session_id": s.session_id,
+                "run_key": s.run_key,
                 "topic": s.topic,
                 "style": s.style,
                 "created_at": s.created_at,
