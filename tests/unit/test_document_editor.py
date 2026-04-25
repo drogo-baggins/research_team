@@ -120,3 +120,60 @@ async def test_edit_document_accepts_sufficient_length_output():
 
     result = await edit_document(mock_stream, agent, "テスト", original, "book_chapter")
     assert result == edited
+
+
+@pytest.mark.asyncio
+async def test_edit_document_strips_leading_commentary():
+    """LLMが作業説明を冒頭に出力した場合、# 見出し前の行が除去される"""
+    agent = DocumentEditorAgent()
+    original = "元の内容。" * 50
+    # LLM output that starts with commentary, then actual markdown
+    llm_output = (
+        "ファイルの内容を確認してから校正を進めます。校正が完了しました。以下の整形を行いました：\n\n"
+        "## 実施した校正内容\n\n"
+        "### 1. LLMのメタ発言除去\n\n"
+        "---\n\n"
+        "整形済みのMarkdown本文は以下の通りです：\n\n"
+        + "# 本物のタイトル\n\n" + "本文内容。" * 40
+    )
+
+    async def mock_stream(ag, prompt, name):
+        return llm_output
+
+    result = await edit_document(mock_stream, agent, "テスト", original, "research_report")
+    assert result.startswith("# 本物のタイトル")
+
+
+@pytest.mark.asyncio
+async def test_edit_document_no_strip_when_starts_with_heading():
+    """出力が最初から # 見出しで始まる場合はそのまま返す"""
+    agent = DocumentEditorAgent()
+    original = "元の内容。" * 50
+    llm_output = "# 正常なタイトル\n\n" + "本文内容。" * 40
+
+    async def mock_stream(ag, prompt, name):
+        return llm_output
+
+    result = await edit_document(mock_stream, agent, "テスト", original, "research_report")
+    assert result.startswith("# 正常なタイトル")
+
+
+def test_strip_leading_commentary_removes_preamble():
+    from research_team.orchestrator.document_editor import _strip_leading_commentary
+    text = "作業説明文です。\n\n## 実施内容\n\n---\n\n# 本文タイトル\n\n本文"
+    result = _strip_leading_commentary(text)
+    assert result.startswith("# 本文タイトル")
+
+
+def test_strip_leading_commentary_no_change_when_clean():
+    from research_team.orchestrator.document_editor import _strip_leading_commentary
+    text = "# タイトル\n\n本文内容"
+    result = _strip_leading_commentary(text)
+    assert result == text
+
+
+def test_strip_leading_commentary_no_heading_returns_original():
+    from research_team.orchestrator.document_editor import _strip_leading_commentary
+    text = "見出しのないテキスト\n本文"
+    result = _strip_leading_commentary(text)
+    assert result == text

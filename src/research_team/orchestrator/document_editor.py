@@ -15,6 +15,24 @@ _SKILLS_DIR = Path(__file__).parent.parent / "agents" / "skills"
 
 _FALLBACK_RATIO = 0.3
 
+
+def _strip_leading_commentary(text: str) -> str:
+    """Strip LLM meta-commentary that appears before the actual markdown content.
+
+    When the LLM outputs editorial notes before the formatted document
+    (e.g. "校正が完了しました..." or "## 実施した校正内容"), this function
+    discards everything before the first top-level '# ' heading line.
+    If no top-level heading is found the text is returned unchanged.
+    """
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        if line.startswith('# '):
+            if i > 0:
+                return '\n'.join(lines[i:]).lstrip('\n')
+            break
+    return text
+
+
 _STYLE_EDIT_INSTRUCTIONS: dict[str, str] = {
     "book_chapter": (
         "書籍の一章として完成させてください。"
@@ -61,6 +79,10 @@ class DocumentEditorAgent(BaseResearchAgent):
 def _build_edit_prompt(topic: str, content: str, style: str) -> str:
     style_instruction = _STYLE_EDIT_INSTRUCTIONS.get(style, _STYLE_EDIT_INSTRUCTIONS["research_report"])
     return (
+        f"【出力制約・最重要】整形済みのMarkdown本文のみを出力すること。"
+        f"冒頭に「校正が完了しました」「以下の整形を行いました」「実施した校正内容」などの"
+        f"作業説明・要約・前置き文を一切書いてはならない。"
+        f"出力の最初の行は必ず `#` または `##` で始まるMarkdown見出しであること。\n\n"
         f"以下は「{topic}」についての最終レポート（校正前）です。\n\n"
         f"【スタイル固有の指示】{style_instruction}\n\n"
         f"【共通指示】\n"
@@ -110,4 +132,4 @@ async def edit_document(
         )
         return content
 
-    return result
+    return _strip_leading_commentary(result)
