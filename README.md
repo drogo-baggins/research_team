@@ -204,7 +204,6 @@ workspace/
     └── 20260420_120000_テーマ名/
         └── artifacts/
             ├── wbs_run<N>_<date>.md               # WBS・品質目標（スタイルにより粒度が異なる）
-            ├── agent_briefing_run<N>_<date>.md    # チーム編成
             ├── <スタイル別成果物>                   # 後述
             ├── review_run<N>_iter<i>_<date>.md    # 品質レビュー記録（品質ループが実行された場合）
             ├── minutes_run<N>_iter<i>_<date>.md   # 打ち合わせ議事録（品質ループが実行された場合）
@@ -232,7 +231,6 @@ workspace/
 ```
 artifacts/
 ├── wbs_run1_20260420.md
-├── agent_briefing_run1_20260420.md
 ├── specialist_AIエンジニア_run1_20260420.md   # スペシャリストごとに1ファイル
 ├── specialist_市場アナリスト_run1_20260420.md
 ├── discussion_run1_20260420.md              # 対談（生成された場合）
@@ -246,10 +244,9 @@ artifacts/
 ```
 artifacts/
 ├── wbs_run1_20260420.md                     # 部・章・節レベルのタスクを含む
-├── agent_briefing_run1_20260420.md
-├── book_ch1-sec1_run1_20260420.md           # 節ごとに1ファイル
-├── book_ch1-sec2_run1_20260420.md
-├── book_ch2-sec1_run1_20260420.md
+├── book_ch01_sec01_run1_20260420.md         # 節ごとに1ファイル
+├── book_ch01_sec02_run1_20260420.md
+├── book_ch02_sec01_run1_20260420.md
 ├── discussion_run1_20260420.md
 ├── report_テーマ名_20260420.md              # 全セクション統合レポート
 └── manifest_run1.json
