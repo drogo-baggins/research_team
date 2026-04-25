@@ -167,10 +167,10 @@ research-team start [OPTIONS]
 | オプション | 選択肢 | デフォルト | 説明 |
 |-----------|--------|-----------|------|
 | `--depth` | `quick` / `standard` / `deep` | `standard` | 調査の深さ |
-| `--style` | `research_report` / `executive_memo` / `magazine_column` / `book_chapter` | `research_report` | 出力スタイル |
-| `--search-mode` | `human` / `tavily` | 環境変数 `SEARCH_MODE` | 検索エンジンの切り替え |
+| `--style` | `research_report` / `executive_memo` / `magazine_column` / `book_chapter` / `paper` | `research_report` | 出力スタイル |
+| `--search-mode` | `human` / `tavily` / `serper` | 環境変数 `SEARCH_MODE` | 検索エンジンの切り替え |
 | `--workspace` | パス文字列 | `./workspace` | レポートの出力先ディレクトリ |
-| `--output-format` | `markdown` | `markdown` | 出力形式 |
+| `--output-format` | `markdown` / `pdf` / `excel` | `markdown` | 出力形式（`pdf`/`excel` は `output-extra` オプション依存が必要） |
 
 **深さオプションの目安：**
 
@@ -334,10 +334,11 @@ python -m pytest -x -q
 
 | マーカー | 説明 | デフォルト |
 |---------|------|-----------|
-| `unit` | 外部依存なしの単体テスト | 実行 |
 | `integration` | 外部サービスが必要 | スキップ |
 | `e2e` | pi-agent + GitHub Copilot ログインが必要 | スキップ |
 | `interactive` | 実ブラウザと手動操作が必要 | スキップ |
+
+> `tests/unit/` ディレクトリのテストはマーカーなしで実行されます。
 
 ### 診断スクリプト
 
