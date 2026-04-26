@@ -100,11 +100,12 @@ def test_build_section_prompt_contains_key_points():
 
 def test_run_returns_combined_text():
     call_count = 0
+    long_body = "十分な本文です。" * 80
 
     async def mock_stream(agent, prompt, name, **kwargs):
         nonlocal call_count
         call_count += 1
-        return f"section_text_{call_count}"
+        return f"section_text_{call_count}\n\n{long_body}"
 
     pipeline = BookChapterPipeline(
         stream_fn=mock_stream,

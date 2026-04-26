@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field, computed_field
 
 logger = logging.getLogger(__name__)
 
+_MIN_SECTION_BODY_CHARS = 500
+_MAX_SECTION_RETRIES = 2
+
 _EDITORIAL_SUFFIX_MARKERS = [
     "\n## 執筆完了",
     "\n## 実装内容",
@@ -28,6 +31,14 @@ def _strip_editorial_suffix(content: str) -> str:
         if idx != -1:
             content = content[:idx].rstrip()
     return content
+
+
+def _extract_body_for_length_check(content: str) -> str:
+    sep = "\n---\n"
+    sep_idx = content.find(sep)
+    if sep_idx != -1:
+        return content[sep_idx + len(sep):].strip()
+    return content.strip()
 
 
 class BookSection(BaseModel):
@@ -156,9 +167,24 @@ class BookChapterPipeline:
                 raw_data=raw_data,
                 previous_sections_summary=previous_summary,
             )
-            text = await self._stream_fn(agent, prompt, agent_name)
-            if text:
+            text = ""
+            for attempt in range(_MAX_SECTION_RETRIES + 1):
+                text = await self._stream_fn(agent, prompt, agent_name)
+                if not text:
+                    continue
                 text = _strip_editorial_suffix(text)
+                body = _extract_body_for_length_check(text)
+                if len(body) >= _MIN_SECTION_BODY_CHARS:
+                    break
+                if attempt < _MAX_SECTION_RETRIES:
+                    logger.warning(
+                        "book_chapter: section %s output too short (%d chars), retrying (%d/%d)",
+                        section.section_id,
+                        len(body),
+                        attempt + 1,
+                        _MAX_SECTION_RETRIES,
+                    )
+            if text:
                 written.append(f"### {section.section_title}\n\n{text}")
                 previous_summary += f"\n- {section.section_title}: {text[:300]}..."
                 if artifact_writer:

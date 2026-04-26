@@ -1093,13 +1093,16 @@ class ResearchCoordinator:
                 _discussion_suffix = combined_content[disc_idx:]
                 _edit_body = combined_content[:disc_idx]
 
-        combined_content = await edit_document(
-            self._stream_agent_output,
-            self._doc_editor,
-            topic,
-            _edit_body,
-            request.style,
-        )
+        if request.style == "book_chapter":
+            combined_content = _edit_body
+        else:
+            combined_content = await edit_document(
+                self._stream_agent_output,
+                self._doc_editor,
+                topic,
+                _edit_body,
+                request.style,
+            )
 
         if _discussion_suffix:
             combined_content += _discussion_suffix
