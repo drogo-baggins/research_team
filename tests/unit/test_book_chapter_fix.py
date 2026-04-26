@@ -28,6 +28,87 @@ def _make_single_section_outline() -> BookOutline:
     )
 
 
+def test_coordinator_assemble_book_from_outline_no_attribute_error(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    outline = _make_single_section_outline()
+    section_path = tmp_path / "section.md"
+    section_path.write_text(
+        "---\n\n### 1-1 市場背景\n\n本文です。\n\n## Sources\n- https://example.com",
+        encoding="utf-8",
+    )
+
+    result = coord._assemble_book_from_outline(
+        outline=outline,
+        section_paths={
+            "ch01_sec01": {
+                "artifact_path": str(section_path),
+            }
+        },
+        topic="テストトピック",
+    )
+
+    assert "# テストトピック" in result
+    assert "本文です。" in result
+
+
+def test_coordinator_assemble_book_from_outline_includes_discussion(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    outline = _make_single_section_outline()
+    section_path = tmp_path / "section.md"
+    section_path.write_text(
+        "---\n\n### 1-1 市場背景\n\n本文です。",
+        encoding="utf-8",
+    )
+    discussion_path = tmp_path / "discussion.md"
+    discussion_path.write_text("# 対談\n\n議論内容", encoding="utf-8")
+
+    result = coord._assemble_book_from_outline(
+        outline=outline,
+        section_paths={
+            "ch01_sec01": {
+                "artifact_path": str(section_path),
+            }
+        },
+        discussion_artifact_path=str(discussion_path),
+        topic="テストトピック",
+    )
+
+    assert "議論内容" in result
+
+
+def test_coordinator_assemble_book_from_outline_delegates_to_book_assembler(tmp_path):
+    coord = ResearchCoordinator(workspace_dir=str(tmp_path))
+    outline = _make_single_section_outline()
+    section_path = tmp_path / "section.md"
+    section_path.write_text("---\n\n本文です。", encoding="utf-8")
+    discussion_path = tmp_path / "discussion.md"
+    discussion_path.write_text("# 対談\n\n議論内容", encoding="utf-8")
+
+    with patch("research_team.orchestrator.book_assembler.BookAssembleTool.assemble", return_value="# テストトピック\n\nassembled") as assemble_mock:
+        result = coord._assemble_book_from_outline(
+            outline=outline,
+            section_paths={
+                "ch01_sec01": {
+                    "artifact_path": str(section_path),
+                }
+            },
+            discussion_artifact_path=str(discussion_path),
+            topic="テストトピック",
+        )
+
+    assert result == "# テストトピック\n\nassembled"
+    assemble_mock.assert_called_once_with(
+        outline=outline,
+        section_paths={
+            "ch01_sec01": {
+                "artifact_path": str(section_path),
+            }
+        },
+        discussion_path=discussion_path,
+        topic="テストトピック",
+    )
+
+
 @pytest.mark.asyncio
 async def test_book_chapter_run_skips_document_editor(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))

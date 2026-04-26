@@ -725,57 +725,15 @@ class ResearchCoordinator:
         topic: str = "",
     ) -> str:
         from pathlib import Path as _Path
+        from research_team.orchestrator.book_assembler import BookAssembleTool
 
-        title_line = f"# {topic.split(chr(10))[0].strip()}\n\n" if topic else ""
-
-        toc_lines = ["## 目次", ""]
-        for ch in outline.chapters:
-            ch_idx = ch["chapter_index"]
-            ch_title = self._strip_chapter_prefix(ch["chapter_title"])
-            toc_lines.append(f"**第{ch_idx}章　{ch_title}**")
-            for sec in ch.get("sections", []):
-                sec_idx = sec["section_index"]
-                sec_title = sec["section_title"]
-                toc_lines.append(f"　　第{ch_idx}.{sec_idx}節　{sec_title}")
-            toc_lines.append("")
-
-        chapter_parts: list[str] = []
-        for ch in outline.chapters:
-            ch_idx = ch["chapter_index"]
-            ch_title = self._strip_chapter_prefix(ch["chapter_title"])
-            ch_lines: list[str] = [f"## 第{ch_idx}章　{ch_title}", ""]
-            for sec in ch.get("sections", []):
-                sec_idx = sec["section_index"]
-                section_id = f"ch{ch_idx:02d}_sec{sec_idx:02d}"
-                entry = section_paths.get(section_id, {})
-                artifact_path = entry.get("artifact_path", "")
-                content = ""
-                if artifact_path:
-                    try:
-                        raw = _Path(artifact_path).read_text(encoding="utf-8")
-                        sep_idx = raw.find("---\n\n")
-                        content = raw[sep_idx + 5:].strip() if sep_idx != -1 else raw.strip()
-                        content = self._strip_section_preamble(content)
-                        content = self._strip_section_suffix(content)
-                    except Exception as exc:
-                        logger.warning("_assemble_book: failed to read %s: %s", artifact_path, exc)
-                if content:
-                    ch_lines.append(content)
-                    ch_lines.append("")
-            chapter_parts.append("\n".join(ch_lines))
-
-        toc = "\n".join(toc_lines)
-        body = "\n\n".join(chapter_parts)
-        result = f"{title_line}{toc}\n\n---\n\n{body}"
-
-        if discussion_artifact_path:
-            try:
-                disc = _Path(discussion_artifact_path).read_text(encoding="utf-8").strip()
-                result += f"\n\n---\n\n{disc}"
-            except Exception as exc:
-                logger.warning("_assemble_book: failed to read discussion: %s", exc)
-
-        return result
+        disc_path = _Path(discussion_artifact_path) if discussion_artifact_path else None
+        return BookAssembleTool().assemble(
+            outline=outline,
+            section_paths=section_paths,
+            discussion_path=disc_path,
+            topic=topic,
+        )
 
     def _build_format_prompt(self, topic: str, content: str, style: str, modification_text: str = "") -> str:
         max_chars = os.environ.get("RT_MAX_SUMMARY_CHARS")
