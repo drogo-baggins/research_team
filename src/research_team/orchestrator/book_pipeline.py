@@ -24,6 +24,43 @@ _EDITORIAL_SUFFIX_MARKERS = [
     "\n執筆しました",
 ]
 
+# LLM が出力先頭に書きがちなメタテキストのパターン（正規表現）
+# 「調査を開始いたします」「ユーザーのご指示を理解しました」などの作業ログ行を除去する
+import re as _re
+_META_PREFIX_PATTERNS = [
+    # 「調査を開始...」「調査が完了...」「調査データが揃いました」等
+    _re.compile(r"^(?:調査を|調査が|調査データ|先行調査|それでは[、，]?調査|より詳細な).{0,200}(?:します|いたします|しました|揃いました|取得します)[。\n]", _re.DOTALL),
+    # 「ユーザーのご指示を理解しました」
+    _re.compile(r"^ユーザーのご指示.{0,300}(?:します|いたします|しました)[。\n]", _re.DOTALL),
+    # 「それでは、「節タイトル」についての詳細な調査を行い...執筆いたします。」
+    _re.compile(r"^それでは[、，]?「.{0,100}」.{0,300}(?:執筆いたします|執筆します)[。\n]", _re.DOTALL),
+    # 「**第N章 ... > N-N ...**」のような章節ラベル再掲行
+    _re.compile(r"^\*\*第\d+[章部].{0,200}\*\*\s*\n"),
+    # 「では、本文を執筆いたします。」単体行
+    _re.compile(r"^(?:では[、，]?|それでは[、，]?)?本文を執筆(?:いたし|し)ます[。]\s*\n"),
+    # 「了解/了承/承知いたしました。…執筆いたします。」（承諾→執筆宣言の組み合わせ）
+    # 本文が同一行に続く場合（例: 「了解いたしました。執筆いたします。本文の内容…」）も「執筆いたします。」まで除去する
+    _re.compile(r"^(?:了解|了承|承知)[いたし]*ました[。.].{0,500}(?:執筆いたします|執筆します)[。]\s*", _re.DOTALL),
+    # 「了解/了承/承知いたしました。」単体承諾行（次行以降が本文）
+    _re.compile(r"^(?:了解|了承|承知)[いたし]*ました[。.]\s*\n"),
+    # 「まず〜収集/調査/確認します。」単体調査宣言行
+    _re.compile(r"^まず[、,]?.{0,100}(?:収集|調査|確認)(?:します|いたします)[。.]\s*\n"),
+]
+
+
+def _strip_meta_prefix(content: str) -> str:
+    changed = True
+    while changed:
+        changed = False
+        stripped = content.lstrip()
+        for pat in _META_PREFIX_PATTERNS:
+            m = pat.match(stripped)
+            if m:
+                stripped = stripped[m.end():].lstrip()
+                changed = True
+        content = stripped
+    return content
+
 
 def _strip_editorial_suffix(content: str) -> str:
     for marker in _EDITORIAL_SUFFIX_MARKERS:
@@ -56,6 +93,7 @@ class BookSection(BaseModel):
 
 
 class BookOutline(BaseModel):
+    topic: str = ""
     chapters: list[dict]
 
     def all_sections(self) -> list[BookSection]:
@@ -76,21 +114,26 @@ class BookOutline(BaseModel):
 
 
 def parse_outline_from_pm_output(raw: str) -> "BookOutline | None":
-    """PMの出力テキストから ```json``` ブロックを抽出してBookOutlineを返す。失敗時はNone。"""
     match = re.search(r"```json\s*(.*?)\s*```", raw, re.DOTALL)
     if not match:
-        match = re.search(r"(\[.*\])", raw, re.DOTALL)
+        match = re.search(r"(\{.*\}|\[.*\])", raw, re.DOTALL)
     if not match:
         logger.warning("parse_outline_from_pm_output: no JSON block found")
         return None
     try:
         data = json.loads(match.group(1))
-        if not isinstance(data, list):
+        book_title = ""
+        if isinstance(data, dict):
+            book_title = data.get("book_title", "")
+            chapters = data.get("chapters", [])
+        elif isinstance(data, list):
+            chapters = data
+        else:
             return None
-        for ch in data:
+        for ch in chapters:
             if "chapter_index" not in ch or "chapter_title" not in ch or "sections" not in ch:
                 return None
-        return BookOutline(chapters=data)
+        return BookOutline(topic=book_title, chapters=chapters)
     except (json.JSONDecodeError, ValueError) as exc:
         logger.warning("parse_outline_from_pm_output: JSON parse failed: %s", exc)
         return None
@@ -135,9 +178,13 @@ class BookChapterPipeline:
             f"{prev_context}"
             f"【調査生データ（参照・引用可）】\n{raw_data[:20000]}\n\n"
             f"上記をもとに、節「{section.section_title}」を1,500〜3,000字で詳細かつ叙述的に執筆してください。\n"
-            f"見出し行は書かないでください。本文のみを出力してください。小見出しが必要な場合は #### 以下を使用してください。説明文・前置きは不要です。\n"
+            f"【出力形式の厳守事項】\n"
+            f"- 出力の最初の文字から本文を開始すること。「調査を開始」「ご指示を理解」「では執筆」などの前置きや作業ログを一切書かないこと。\n"
+            f"- 見出し行（節タイトル・章タイトル）は書かないこと。本文のみを出力すること。\n"
+            f"- 小見出しが必要な場合は #### 以下を使用すること。\n"
+            f"- 適切な箇所に Markdown テーブルや箇条書きを使って視覚的に整理すること（最低1箇所）。\n"
             f"【禁止】節末尾に「執筆完了」「完了しました」「執筆いたしました」「実装内容：」「字数：」などの"
-            f"完了報告・実行サマリー・メタ情報を絶対に含めないこと。本文のみを出力すること。\n"
+            f"完了報告・実行サマリー・メタ情報を絶対に含めないこと。\n"
             f"【引用必須】調査データ内の出典を参照した場合は、各主張の末尾にインライン引用"
             f"（例: ([タイトル](URL))）を付けてください。"
             f"節の末尾に「## Sources」セクションを設け、使用した出典URLを箇条書きでリストアップしてください。"
@@ -173,6 +220,7 @@ class BookChapterPipeline:
                 if not text:
                     continue
                 text = _strip_editorial_suffix(text)
+                text = _strip_meta_prefix(text)
                 body = _extract_body_for_length_check(text)
                 if len(body) >= _MIN_SECTION_BODY_CHARS:
                     break

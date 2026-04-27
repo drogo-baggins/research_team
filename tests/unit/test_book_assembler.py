@@ -181,7 +181,6 @@ class TestAssemble:
         disc_path = tmp_path / "discussion.md"
         disc_path.write_text(DISCUSSION_CONTENT, encoding="utf-8")
         result = tool.assemble(outline, section_paths, discussion_path=disc_path, topic="T")
-        assert "対談トランスクリプト" in result
         assert "対談の内容がここに入ります" in result
 
     def test_discussion_after_body(self, tmp_path):
@@ -207,3 +206,15 @@ class TestAssemble:
         section_paths = write_artifacts(tmp_path, outline)
         result = tool.assemble(outline, section_paths, topic="T")
         assert "## 目次" in result
+
+    def test_discussion_top_h1_stripped(self, tmp_path):
+        tool = BookAssembleTool()
+        outline = make_outline(1, 1)
+        section_paths = write_artifacts(tmp_path, outline)
+        disc_path = tmp_path / "discussion.md"
+        disc_path.write_text(DISCUSSION_CONTENT, encoding="utf-8")
+        result = tool.assemble(outline, section_paths, discussion_path=disc_path, topic="T")
+        lines = result.splitlines()
+        h1_lines = [l for l in lines if l.startswith("# ")]
+        assert len(h1_lines) == 1
+        assert h1_lines[0] == "# T"

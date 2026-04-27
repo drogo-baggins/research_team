@@ -728,11 +728,12 @@ class ResearchCoordinator:
         from research_team.orchestrator.book_assembler import BookAssembleTool
 
         disc_path = _Path(discussion_artifact_path) if discussion_artifact_path else None
+        effective_title = outline.topic if outline.topic else topic
         return BookAssembleTool().assemble(
             outline=outline,
             section_paths=section_paths,
             discussion_path=disc_path,
-            topic=topic,
+            topic=effective_title,
         )
 
     def _build_format_prompt(self, topic: str, content: str, style: str, modification_text: str = "") -> str:
@@ -997,7 +998,7 @@ class ResearchCoordinator:
             ]
             discussion_transcript = await self._run_discussion(
                 specialists=discussion_specialists,
-                topic=topic,
+                topic=book_outline.topic if book_outline and book_outline.topic else topic,
                 artifact_writer=artifact_writer,
                 run_id=run_id,
             )
@@ -1051,16 +1052,13 @@ class ResearchCoordinator:
                 _discussion_suffix = combined_content[disc_idx:]
                 _edit_body = combined_content[:disc_idx]
 
-        if request.style == "book_chapter":
-            combined_content = _edit_body
-        else:
-            combined_content = await edit_document(
-                self._stream_agent_output,
-                self._doc_editor,
-                topic,
-                _edit_body,
-                request.style,
-            )
+        combined_content = await edit_document(
+            self._stream_agent_output,
+            self._doc_editor,
+            topic,
+            _edit_body,
+            request.style,
+        )
 
         if _discussion_suffix:
             combined_content += _discussion_suffix
@@ -1293,21 +1291,25 @@ class ResearchCoordinator:
             f"各章には3〜5節を設けてください。\n\n"
             f"【調査データ】\n{raw_content[:20000]}\n\n"
             f"必ず以下のJSON形式のみを出力してください。説明文・前置きは一切含めないでください。\n"
+            f"book_title は市販の書籍に相応しい簡潔なタイトル（20字以内）にしてください。\n"
             f"```json\n"
-            f"[\n"
-            f"  {{\n"
-            f"    \"chapter_index\": 1,\n"
-            f"    \"chapter_title\": \"第1章 タイトル\",\n"
-            f"    \"sections\": [\n"
-            f"      {{\n"
-            f"        \"section_index\": 1,\n"
-            f"        \"section_title\": \"1-1 節タイトル\",\n"
-            f"        \"key_points\": [\"論点A\", \"論点B\", \"論点C\"],\n"
-            f"        \"specialist_hint\": \"この節に最適な専門分野\"\n"
-            f"      }}\n"
-            f"    ]\n"
-            f"  }}\n"
-            f"]\n"
+            f"{{\n"
+            f"  \"book_title\": \"書籍タイトル（20字以内）\",\n"
+            f"  \"chapters\": [\n"
+            f"    {{\n"
+            f"      \"chapter_index\": 1,\n"
+            f"      \"chapter_title\": \"第1章 タイトル\",\n"
+            f"      \"sections\": [\n"
+            f"        {{\n"
+            f"          \"section_index\": 1,\n"
+            f"          \"section_title\": \"1-1 節タイトル\",\n"
+            f"          \"key_points\": [\"論点A\", \"論点B\", \"論点C\"],\n"
+            f"          \"specialist_hint\": \"この節に最適な専門分野\"\n"
+            f"        }}\n"
+            f"      ]\n"
+            f"    }}\n"
+            f"  ]\n"
+            f"}}\n"
             f"```"
         )
         raw = await self._stream_agent_output(self._pm_agent, prompt, "PM (セクション分解)")

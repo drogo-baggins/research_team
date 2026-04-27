@@ -110,7 +110,7 @@ def test_coordinator_assemble_book_from_outline_delegates_to_book_assembler(tmp_
 
 
 @pytest.mark.asyncio
-async def test_book_chapter_run_skips_document_editor(tmp_path):
+async def test_book_chapter_run_calls_document_editor(tmp_path):
     coord = ResearchCoordinator(workspace_dir=str(tmp_path))
     request = ResearchRequest(topic="書籍テスト", style="book_chapter")
     artifact_writer = ArtifactWriter.for_session(tmp_path, "session-book")
@@ -118,7 +118,8 @@ async def test_book_chapter_run_skips_document_editor(tmp_path):
     fake_factory = MagicMock()
     fake_factory.agents = {"経済アナリスト": MagicMock(_expertise="経済")}
     assembled_book = "# 書籍タイトル\n\n" + ("十分に長い本文。" * 700)
-    edit_document_mock = AsyncMock(return_value="編集済み本文")
+    edited_book = "# 書籍タイトル\n\n" + ("編集済み本文。" * 700)
+    edit_document_mock = AsyncMock(return_value=edited_book)
 
     with (
         patch("research_team.orchestrator.coordinator.DynamicAgentFactory", return_value=fake_factory),
@@ -141,8 +142,9 @@ async def test_book_chapter_run_skips_document_editor(tmp_path):
             resume_writer=artifact_writer,
         )
 
-    edit_document_mock.assert_not_awaited()
-    assert result.content == assembled_book
+    edit_document_mock.assert_awaited_once()
+    call_args = edit_document_mock.call_args
+    assert "対談トランスクリプト" not in call_args.args[3]
 
 
 @pytest.mark.asyncio

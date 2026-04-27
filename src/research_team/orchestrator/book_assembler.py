@@ -126,6 +126,9 @@ class BookAssembleTool:
         if discussion_path is not None:
             try:
                 disc = Path(discussion_path).read_text(encoding="utf-8").strip()
+                disc_lines = disc.splitlines()
+                if disc_lines and re.match(r"^#\s+", disc_lines[0]):
+                    disc = "\n".join(disc_lines[1:]).lstrip()
                 result += f"\n\n---\n\n{disc}"
             except Exception as exc:
                 logger.warning("BookAssembleTool: failed to read discussion %s: %s", discussion_path, exc)
