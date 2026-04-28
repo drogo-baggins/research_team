@@ -27,6 +27,7 @@ class RunProgress:
     wbs_artifact_path: str
     created_at: str
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    accessibility: str = "standard"
 
     @property
     def completed_specialists(self) -> list[SpecialistProgress]:

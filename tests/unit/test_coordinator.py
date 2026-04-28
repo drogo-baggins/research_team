@@ -1074,7 +1074,7 @@ async def test_run_research_resume_reads_completed_specialist_file(tmp_path):
 
     pass_calls: list[dict] = []
 
-    async def fake_specialist_pass(factory, topic, feedback, reference_content="", run_id=0, artifact_writer=None, style="research_report", pre_completed=None, on_specialist_done=None):
+    async def fake_specialist_pass(factory, topic, feedback, reference_content="", run_id=0, artifact_writer=None, style="research_report", accessibility="standard", pre_completed=None, on_specialist_done=None):
         pass_calls.append({"pre_completed": pre_completed})
         return ("結果テキスト", {})
 
@@ -1137,7 +1137,7 @@ async def test_run_research_resume_handles_missing_artifact_files(tmp_path):
 
     pass_calls: list[dict] = []
 
-    async def fake_specialist_pass(factory, topic, feedback, reference_content="", run_id=0, artifact_writer=None, style="research_report", pre_completed=None, on_specialist_done=None):
+    async def fake_specialist_pass(factory, topic, feedback, reference_content="", run_id=0, artifact_writer=None, style="research_report", accessibility="standard", pre_completed=None, on_specialist_done=None):
         pass_calls.append({"pre_completed": pre_completed})
         return ("", {})
 
@@ -1279,6 +1279,41 @@ async def test_run_modify_mode_no_sessions_does_not_increment_run_count(tmp_path
 
     ui.append_agent_message.assert_awaited_once()
     assert session.run_count == 0
+
+
+def test_build_research_task_accessibility_concise_adds_instruction():
+    result = _build_research_task("AI活用", None, "調査員", accessibility="concise")
+    assert "ニュース記事スタイル" in result
+    assert "【重要】" in result
+    idx_constraint = result.index("【文体・長さの制約")
+    idx_important = result.index("【重要】")
+    assert idx_constraint < idx_important
+
+
+def test_build_research_task_accessibility_approachable_adds_instruction():
+    result = _build_research_task("AI活用", None, "調査員", accessibility="approachable")
+    assert "共感" in result
+    assert "シナリオ" in result
+
+
+def test_build_research_task_accessibility_standard_no_extra_instruction():
+    result = _build_research_task("AI活用", None, "調査員", accessibility="standard")
+    assert "【文体・長さの制約" not in result
+
+
+def test_evaluate_content_accessibility_multiplier():
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    base = coord._evaluate_content("x" * 800, depth="standard", accessibility="standard")
+    concise = coord._evaluate_content("x" * 560, depth="standard", accessibility="concise")
+    approachable_fail = coord._evaluate_content("x" * 800, depth="standard", accessibility="approachable")
+    assert base.passed
+    assert concise.passed
+    assert not approachable_fail.passed
+
+
+def test_research_request_accessibility_default():
+    req = ResearchRequest(topic="test")
+    assert req.accessibility == "standard"
 
 
 @pytest.mark.asyncio

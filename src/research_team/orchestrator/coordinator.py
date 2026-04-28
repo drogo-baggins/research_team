@@ -41,6 +41,7 @@ from research_team.security.sanitizer import sanitize_query
 class ResearchRequest:
     topic: str
     depth: str = "standard"
+    accessibility: str = "standard"
     output_format: str = "markdown"
     reference_files: list[str] = field(default_factory=list)
     style: str = "research_report"
@@ -162,6 +163,7 @@ def _build_research_task(
     agent_name: str,
     reference_content: str = "",
     style: str = "research_report",
+    accessibility: str = "standard",
 ) -> str:
     style_instruction = _STYLE_INSTRUCTIONS.get(style, _STYLE_INSTRUCTIONS["research_report"])
     base = (
@@ -169,6 +171,11 @@ def _build_research_task(
         f"\n\nテーマ: {topic}"
         f"\n\nweb_search および web_fetch ツールを積極的に活用して、最新の情報を収集してください。"
         f"\n\n【出力形式の指示】{style_instruction}"
+    )
+    accessibility_instruction = _ACCESSIBILITY_INSTRUCTIONS.get(accessibility, "")
+    if accessibility_instruction:
+        base += f"\n\n{accessibility_instruction}"
+    base += (
         f"\n\n【重要】調査結果のみをMarkdown形式で出力してください。"
         f"思考過程、謝罪文、「検索します」などの作業説明は一切含めないでください。"
     )
@@ -237,6 +244,34 @@ _STYLE_INSTRUCTIONS: dict[str, str] = {
 }
 
 _STYLES_WITHOUT_EXEC_SUMMARY = {"book_chapter", "magazine_column"}
+
+_ACCESSIBILITY_INSTRUCTIONS: dict[str, str] = {
+    "concise": (
+        "【文体・長さの制約（最優先）】\n"
+        "ニュース記事スタイルで執筆してください。\n"
+        "- 1文は40字以内を目安にする\n"
+        "- 事実・数値・結論のみを記述する\n"
+        "- 背景説明・事例・比喩は省略する\n"
+        "- 補足説明のための接続詞（「なぜなら」「つまり」等）を使わない"
+    ),
+    "standard": "",
+    "approachable": (
+        "【文体・長さの制約（最優先）】\n"
+        "読者の共感と理解を深めるスタイルで執筆してください。\n"
+        "- 抽象的な概念や事実を説明する際は、読者が自分事として想像できる具体的な場面・シナリオを描写してから論点に入る\n"
+        "- 「ある企業の担当者が〜という判断を迫られた」「〜が日常に変化をもたらした瞬間」のような、\n"
+        "  人物や状況が浮かぶ描写を活用する\n"
+        "- 専門用語は必要であれば使ってよいが、初出時は文脈の中で自然に意味が伝わるよう説明を織り込む\n"
+        "- 読者に問いかけたり共感を促す表現（「〜を経験したことはないだろうか」等）を適度に用いる\n"
+        "- セクション冒頭にシナリオ・エピソードを置き、そこから本論へ接続する構成を推奨する"
+    ),
+}
+
+_ACCESSIBILITY_MULTIPLIER: dict[str, float] = {
+    "concise": 0.7,
+    "standard": 1.0,
+    "approachable": 2.0,
+}
 
 _REGEN_KEYWORDS = [
     "変えて",
@@ -876,6 +911,7 @@ class ResearchCoordinator:
                 topic=topic,
                 style=request.style,
                 depth=request.depth,
+                accessibility=request.accessibility,
                 locales=request.locales,
                 all_specialists=[
                     SpecialistProgress(name=s["name"], expertise=s["expertise"])
@@ -923,6 +959,7 @@ class ResearchCoordinator:
                 run_id=run_id,
                 artifact_writer=artifact_writer,
                 style=request.style,
+                accessibility=request.accessibility,
             )
             if isinstance(specialist_result, tuple):
                 new_content, specialist_artifact_paths = specialist_result
@@ -946,6 +983,7 @@ class ResearchCoordinator:
             run_id=run_id,
             artifact_writer=artifact_writer,
             style=request.style,
+            accessibility=request.accessibility,
             pre_completed=pre_completed,
             on_specialist_done=_on_specialist_done,
         )
@@ -1077,7 +1115,7 @@ class ResearchCoordinator:
         async def evaluate(content: str) -> QualityFeedback:
             nonlocal iterations_done
             iterations_done += 1
-            deterministic = self._evaluate_content(content, request.depth, style=request.style)
+            deterministic = self._evaluate_content(content, request.depth, style=request.style, accessibility=request.accessibility)
             if not deterministic.passed:
                 return deterministic
             audit = await self._run_audit(content, topic)
@@ -1238,6 +1276,7 @@ class ResearchCoordinator:
         run_id: int = 0,
         artifact_writer: ArtifactWriter | None = None,
         style: str = "research_report",
+        accessibility: str = "standard",
         pre_completed: dict[str, str] | None = None,
         on_specialist_done: "Callable[[str, str], None] | None" = None,
     ) -> tuple[str, dict[str, str]]:
@@ -1251,7 +1290,7 @@ class ResearchCoordinator:
                 await self._mark_wbs_done(f"r{run_id}-task-specialist-{i}")
                 continue
 
-            task_message = _build_research_task(topic, feedback, name, reference_content, style=style)
+            task_message = _build_research_task(topic, feedback, name, reference_content, style=style, accessibility=accessibility)
             section = await self._stream_agent_output(
                 agent,
                 task_message,
@@ -1329,12 +1368,14 @@ class ResearchCoordinator:
             pass
         return [{"name": "調査員", "expertise": f"{topic}の総合調査"}]
 
-    def _evaluate_content(self, content: str, depth: str, style: str = "") -> QualityFeedback:
+    def _evaluate_content(self, content: str, depth: str, style: str = "", accessibility: str = "standard") -> QualityFeedback:
         issues: list[str] = []
         if style == "book_chapter":
-            min_length = {"quick": 3000, "standard": 8000, "deep": 15000}.get(depth, 8000)
+            base_length = {"quick": 3000, "standard": 8000, "deep": 15000}.get(depth, 8000)
         else:
-            min_length = {"quick": 300, "standard": 800, "deep": 2000}.get(depth, 800)
+            base_length = {"quick": 300, "standard": 800, "deep": 2000}.get(depth, 800)
+        multiplier = _ACCESSIBILITY_MULTIPLIER.get(accessibility, 1.0)
+        min_length = int(base_length * multiplier)
         if len(content) < min_length:
             issues.append(f"内容が不十分です（{len(content)}文字 / 目標{min_length}文字）")
         if issues:
@@ -1409,6 +1450,7 @@ class ResearchCoordinator:
         self,
         depth: str = "standard",
         style: str = "research_report",
+        accessibility: str = "standard",
         output_format: str = "markdown",
     ) -> None:
         session = SessionState()
@@ -1418,7 +1460,7 @@ class ResearchCoordinator:
 
         if not self._ui:
             topic = input("テーマを入力してください: ")
-            request = ResearchRequest(topic=topic, depth=depth, style=style, output_format=output_format)
+            request = ResearchRequest(topic=topic, depth=depth, accessibility=accessibility, style=style, output_format=output_format)
             session_id = self._make_session_id(topic)
             await self.run(request, run_id=0, session_id=session_id)
             return
@@ -1447,6 +1489,7 @@ class ResearchCoordinator:
                 request = ResearchRequest(
                     topic=resume_progress.topic,
                     depth=resume_progress.depth,
+                    accessibility=resume_progress.accessibility,
                     output_format=output_format,
                     style=resume_progress.style,
                     locales=resume_progress.locales,
@@ -1532,7 +1575,7 @@ class ResearchCoordinator:
             run_id = session.run_count
             if not session.session_id:
                 session.session_id = self._make_session_id(topic)
-            request = ResearchRequest(topic=topic, depth=depth, output_format=output_format)
+            request = ResearchRequest(topic=topic, depth=depth, accessibility=accessibility, output_format=output_format)
             try:
                 result = await self.run(request, run_id=run_id, session_id=session.session_id)
                 session.current_topic = topic

@@ -17,6 +17,7 @@ app = typer.Typer(help="Research Team Agent System")
 def start(
     depth: str = typer.Option("standard", help="調査の深さ: quick|standard|deep"),
     style: str = typer.Option("research_report", help="出力スタイル: research_report|executive_memo|magazine_column|book_chapter|paper"),
+    accessibility: str = typer.Option("standard", help="文体スタイル: concise|standard|approachable"),
     search_mode: Optional[str] = typer.Option(None, help="検索モード: human|tavily|serper"),
     workspace: Optional[str] = typer.Option(None, help="作業ディレクトリ"),
     output_format: str = typer.Option("markdown", help="出力形式: markdown|pdf|excel"),
@@ -50,7 +51,7 @@ def start(
 
             coordinator = ResearchCoordinator(workspace_dir=workspace, ui=ui)
             try:
-                await coordinator.run_interactive(depth=depth, style=style, output_format=output_format)
+                await coordinator.run_interactive(depth=depth, style=style, accessibility=accessibility, output_format=output_format)
             except Exception as exc:
                 tb = traceback.format_exc()
                 logger.error("fatal error:\n%s", tb)
