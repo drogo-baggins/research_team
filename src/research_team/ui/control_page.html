@@ -326,8 +326,16 @@
               <option value="paper">学術論文</option>
             </select>
           </div>
-          <div class="wbs-approval-row" style="align-items:flex-start">
-            <span class="wbs-approval-label" style="padding-top:3px">検索言語</span>
+           <div class="wbs-approval-row">
+             <span class="wbs-approval-label">文体</span>
+             <div class="btn-group" id="accessibilityBtnGroup">
+               <button class="sel-btn" data-value="concise" onclick="selectAccessibility('concise')">簡潔</button>
+               <button class="sel-btn active" data-value="standard" onclick="selectAccessibility('standard')">標準</button>
+               <button class="sel-btn" data-value="approachable" onclick="selectAccessibility('approachable')">入りやすい</button>
+             </div>
+           </div>
+           <div class="wbs-approval-row" style="align-items:flex-start">
+             <span class="wbs-approval-label" style="padding-top:3px">検索言語</span>
             <div class="locale-chips" id="localeChips">
               <span class="locale-chip active" data-locale="ja" onclick="_toggleLocaleChip(this)">🇯🇵 日本語</span>
               <span class="locale-chip active" data-locale="en" onclick="_toggleLocaleChip(this)">🇺🇸 English</span>
@@ -586,6 +594,7 @@
 
     // ── WBS承認パネル ─────────────────────────────────────────
     let _wbsDepth = 'standard';
+    let _wbsAccessibility = 'standard';
 
     function _getSelectedLocales() {
       return Array.from(document.querySelectorAll('#localeChips .locale-chip.active'))
@@ -612,10 +621,14 @@
       container.appendChild(item);
     }
 
-    function showWbsApproval(depth, style, locales) {
+    function showWbsApproval(depth, style, locales, accessibility) {
       _wbsDepth = depth;
+      _wbsAccessibility = accessibility || 'standard';
       document.querySelectorAll('#depthBtnGroup .sel-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.value === depth);
+      });
+      document.querySelectorAll('#accessibilityBtnGroup .sel-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === _wbsAccessibility);
       });
       document.getElementById('styleSelect').value = style;
       _initLocaleChips(locales || ['ja', 'en']);
@@ -636,6 +649,13 @@
       });
     }
 
+    function selectAccessibility(value) {
+      _wbsAccessibility = value;
+      document.querySelectorAll('#accessibilityBtnGroup .sel-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === value);
+      });
+    }
+
     function toggleWbsFeedback() {
       const body = document.getElementById('wbsFeedbackBody');
       const toggle = document.querySelector('.wbs-feedback-toggle');
@@ -652,6 +672,7 @@
         depth: _wbsDepth,
         style: document.getElementById('styleSelect').value,
         locales: _getSelectedLocales(),
+        accessibility: _wbsAccessibility,
       });
     }
 
@@ -665,6 +686,7 @@
         depth: _wbsDepth,
         style: document.getElementById('styleSelect').value,
         locales: _getSelectedLocales(),
+        accessibility: _wbsAccessibility,
       });
     }
 

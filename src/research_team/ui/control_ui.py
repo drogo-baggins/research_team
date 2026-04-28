@@ -184,14 +184,14 @@ class ControlUI:
     def get_current_mode(self) -> str:
         return self._current_mode
 
-    async def show_wbs_approval(self, depth: str, style: str, locales: list[str] | None = None) -> dict | None:
+    async def show_wbs_approval(self, depth: str, style: str, locales: list[str] | None = None, accessibility: str = "standard") -> dict | None:
         self._wbs_approval_event.clear()
         self._wbs_approval_result = None
         if self._is_alive():
             assert self._page
             try:
                 await self._page.evaluate(
-                    f"showWbsApproval({json.dumps(depth)}, {json.dumps(style)}, {json.dumps(locales or ['ja', 'en'])})"
+                    f"showWbsApproval({json.dumps(depth)}, {json.dumps(style)}, {json.dumps(locales or ['ja', 'en'])}, {json.dumps(accessibility)})"
                 )
             except Exception:
                 self._wbs_approval_event.set()

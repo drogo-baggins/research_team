@@ -1419,6 +1419,7 @@ class ResearchCoordinator:
                 depth=request.depth,
                 style=request.style,
                 locales=request.locales,
+                accessibility=request.accessibility,
             )
 
             if result is None:
@@ -1428,6 +1429,7 @@ class ResearchCoordinator:
                 request.depth = result["depth"]
                 request.style = result["style"]
                 request.locales = result.get("locales", request.locales)
+                request.accessibility = result.get("accessibility", request.accessibility)
                 set_locales = getattr(self._search_engine, "set_preferred_locales", None)
                 if callable(set_locales):
                     set_locales(request.locales)
