@@ -106,6 +106,27 @@ async def test_run_transcript_has_markdown_header(specialists, personas):
 
 
 @pytest.mark.asyncio
+async def test_run_includes_participant_section(specialists, personas):
+    async def fake_stream(agent, message, agent_name, **kwargs):
+        return "発言"
+
+    orch = DiscussionOrchestrator(stream_fn=fake_stream, turns=1)
+    result = await orch.run(specialists=specialists, personas=personas, topic="AIの未来")
+    assert "## 参加者" in result, "対談トランスクリプトに ## 参加者 セクションが含まれていない"
+
+
+@pytest.mark.asyncio
+async def test_run_participant_section_maps_labels_to_names(specialists, personas):
+    async def fake_stream(agent, message, agent_name, **kwargs):
+        return "発言"
+
+    orch = DiscussionOrchestrator(stream_fn=fake_stream, turns=1)
+    result = await orch.run(specialists=specialists, personas=personas, topic="AIの未来")
+    assert "**A**" in result, "参加者セクションにラベル **A** が含まれていない"
+    assert "Alice" in result, "参加者セクションに名前 Alice が含まれていない"
+
+
+@pytest.mark.asyncio
 async def test_run_handles_empty_stream_response(specialists, personas):
     async def fake_stream(agent, message, agent_name, **kwargs):
         return ""

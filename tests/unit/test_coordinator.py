@@ -1281,6 +1281,31 @@ async def test_run_modify_mode_no_sessions_does_not_increment_run_count(tmp_path
     assert session.run_count == 0
 
 
+def test_format_prompt_preserves_participant_list_instruction(tmp_path):
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    prompt = coord._build_format_prompt(
+        topic="テスト",
+        content="調査内容",
+        style="magazine_column",
+    )
+    assert "## 参加者" in prompt, (
+        "_build_format_prompt に ## 参加者 保持の指示が含まれていない。"
+        "対談セクションのフォーマット時に参加者一覧が削除されるリグレッションが再発する。"
+    )
+
+
+def test_format_prompt_discussion_section_preservation_mentioned(tmp_path):
+    coord = ResearchCoordinator.__new__(ResearchCoordinator)
+    coord._workspace_dir = str(tmp_path)
+    prompt = coord._build_format_prompt(
+        topic="テスト",
+        content="調査内容",
+        style="magazine_column",
+    )
+    assert "対談" in prompt, "_build_format_prompt に対談セクション保持の指示が含まれていない"
+
+
 def test_build_research_task_accessibility_concise_adds_instruction():
     result = _build_research_task("AI活用", None, "調査員", accessibility="concise")
     assert "ニュース記事スタイル" in result

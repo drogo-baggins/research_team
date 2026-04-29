@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+echo "==> pre-commit: running unit tests..."
+python -m pytest tests/unit/ -x -q --tb=short --timeout=120
+echo "==> pre-commit: all tests passed."
