@@ -25,6 +25,8 @@ class ControlUI:
         self._closed_event: asyncio.Event = asyncio.Event()
         self._wbs_approval_event: asyncio.Event = asyncio.Event()
         self._wbs_approval_result: dict | None = None
+        self._settings_event: asyncio.Event = asyncio.Event()
+        self._settings_result: dict | None = None
         self._on_approval_start: Callable[[], None] | None = None
         self._on_approval_end: Callable[[], None] | None = None
         self._current_mode: str = "new_request"
@@ -65,6 +67,7 @@ class ControlUI:
         self._closed_event.set()
         self._approval_event.set()
         self._wbs_approval_event.set()
+        self._settings_event.set()
         self._session_selection_event.set()
         self._chat_queue.put_nowait("")
 
@@ -100,22 +103,25 @@ class ControlUI:
                 if not approved and not payload.get("feedback"):
                     self._wbs_approval_result = None
                 else:
-                    self._wbs_approval_result = {
-                        "approved": approved,
-                        "depth": payload.get("depth", "standard"),
-                        "style": payload.get("style", "research_report"),
-                        "locales": payload.get("locales", ["ja", "en"]),
-                    }
+                    self._wbs_approval_result = {"approved": approved}
                 self._wbs_approval_event.set()
             case "wbs_feedback":
                 self._wbs_approval_result = {
                     "approved": False,
                     "feedback": payload.get("text", ""),
+                }
+                self._wbs_approval_event.set()
+            case "settings_confirmed":
+                self._settings_result = {
                     "depth": payload.get("depth", "standard"),
                     "style": payload.get("style", "research_report"),
                     "locales": payload.get("locales", ["ja", "en"]),
+                    "accessibility": payload.get("accessibility", "standard"),
                 }
-                self._wbs_approval_event.set()
+                self._settings_event.set()
+            case "settings_cancelled":
+                self._settings_result = None
+                self._settings_event.set()
 
     async def append_agent_message(self, sender: str, text: str) -> None:
         if not self._is_alive():
@@ -184,15 +190,36 @@ class ControlUI:
     def get_current_mode(self) -> str:
         return self._current_mode
 
-    async def show_wbs_approval(self, depth: str, style: str, locales: list[str] | None = None, accessibility: str = "standard") -> dict | None:
+    async def show_new_research_form(
+        self,
+        depth: str,
+        style: str,
+        locales: list[str] | None = None,
+        accessibility: str = "standard",
+    ) -> dict | None:
+        self._settings_event.clear()
+        self._settings_result = None
+        if self._is_alive():
+            assert self._page
+            try:
+                await self._page.evaluate(
+                    f"showSettingsPanel({json.dumps(depth)}, {json.dumps(style)}, "
+                    f"{json.dumps(locales or ['ja', 'en'])}, {json.dumps(accessibility)})"
+                )
+            except Exception:
+                self._settings_event.set()
+        else:
+            self._settings_event.set()
+        await self._settings_event.wait()
+        return self._settings_result
+
+    async def show_wbs_approval(self) -> dict | None:
         self._wbs_approval_event.clear()
         self._wbs_approval_result = None
         if self._is_alive():
             assert self._page
             try:
-                await self._page.evaluate(
-                    f"showWbsApproval({json.dumps(depth)}, {json.dumps(style)}, {json.dumps(locales or ['ja', 'en'])}, {json.dumps(accessibility)})"
-                )
+                await self._page.evaluate("showWbsApproval()")
             except Exception:
                 self._wbs_approval_event.set()
         else:

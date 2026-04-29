@@ -307,18 +307,19 @@
            <div class="wbs-empty" id="wbsEmpty">タスクはまだありません</div>
          </div>
          <div class="artifact-links" id="artifactLinks"></div>
-         <div class="wbs-approval-panel" id="wbsApprovalPanel">
+        <!-- 新規調査設定パネル（テーマ入力後・WBS生成前に表示） -->
+        <div class="wbs-approval-panel" id="settingsPanel">
           <div class="wbs-approval-row">
             <span class="wbs-approval-label">調査深度</span>
-            <div class="btn-group" id="depthBtnGroup">
-              <button class="sel-btn" data-value="quick" onclick="selectDepth('quick')">クイック</button>
-              <button class="sel-btn" data-value="standard" onclick="selectDepth('standard')">スタンダード</button>
-              <button class="sel-btn" data-value="deep" onclick="selectDepth('deep')">ディープ</button>
+            <div class="btn-group" id="settingsDepthBtnGroup">
+              <button class="sel-btn" data-value="quick" onclick="selectSettingsDepth('quick')">クイック</button>
+              <button class="sel-btn" data-value="standard" onclick="selectSettingsDepth('standard')">スタンダード</button>
+              <button class="sel-btn" data-value="deep" onclick="selectSettingsDepth('deep')">ディープ</button>
             </div>
           </div>
           <div class="wbs-approval-row">
             <span class="wbs-approval-label">スタイル</span>
-            <select id="styleSelect" class="style-select">
+            <select id="settingsStyleSelect" class="style-select">
               <option value="research_report">調査レポート</option>
               <option value="executive_memo">エグゼクティブメモ</option>
               <option value="magazine_column">マガジンコラム</option>
@@ -326,38 +327,46 @@
               <option value="paper">学術論文</option>
             </select>
           </div>
-           <div class="wbs-approval-row">
-             <span class="wbs-approval-label">文体</span>
-             <div class="btn-group" id="accessibilityBtnGroup">
-               <button class="sel-btn" data-value="concise" onclick="selectAccessibility('concise')">簡潔</button>
-               <button class="sel-btn active" data-value="standard" onclick="selectAccessibility('standard')">標準</button>
-               <button class="sel-btn" data-value="approachable" onclick="selectAccessibility('approachable')">入りやすい</button>
-             </div>
-           </div>
-           <div class="wbs-approval-row" style="align-items:flex-start">
-             <span class="wbs-approval-label" style="padding-top:3px">検索言語</span>
-            <div class="locale-chips" id="localeChips">
-              <span class="locale-chip active" data-locale="ja" onclick="_toggleLocaleChip(this)">🇯🇵 日本語</span>
-              <span class="locale-chip active" data-locale="en" onclick="_toggleLocaleChip(this)">🇺🇸 English</span>
-              <span class="locale-chip" data-locale="zh-CN" onclick="_toggleLocaleChip(this)">🇨🇳 中文(簡)</span>
-              <span class="locale-chip" data-locale="zh-TW" onclick="_toggleLocaleChip(this)">🇹🇼 中文(繁)</span>
-              <span class="locale-chip" data-locale="ko" onclick="_toggleLocaleChip(this)">🇰🇷 한국어</span>
-              <span class="locale-chip" data-locale="fr" onclick="_toggleLocaleChip(this)">🇫🇷 Français</span>
-              <span class="locale-chip" data-locale="de" onclick="_toggleLocaleChip(this)">🇩🇪 Deutsch</span>
-              <span class="locale-chip" data-locale="es" onclick="_toggleLocaleChip(this)">🇪🇸 Español</span>
-              <span class="locale-chip" data-locale="pt" onclick="_toggleLocaleChip(this)">🇧🇷 Português</span>
-              <span class="locale-chip" data-locale="ar" onclick="_toggleLocaleChip(this)">🇸🇦 العربية</span>
-              <span class="locale-chip" data-locale="ru" onclick="_toggleLocaleChip(this)">🇷🇺 Русский</span>
-              <span class="locale-chip" data-locale="hi" onclick="_toggleLocaleChip(this)">🇮🇳 हिन्दी</span>
-              <span class="locale-chip" data-locale="th" onclick="_toggleLocaleChip(this)">🇹🇭 ภาษาไทย</span>
-              <span class="locale-chip" data-locale="vi" onclick="_toggleLocaleChip(this)">🇻🇳 Tiếng Việt</span>
-              <span class="locale-chip" data-locale="id" onclick="_toggleLocaleChip(this)">🇮🇩 Bahasa</span>
-              <span class="locale-chip" data-locale="it" onclick="_toggleLocaleChip(this)">🇮🇹 Italiano</span>
-              <span class="locale-chip" data-locale="nl" onclick="_toggleLocaleChip(this)">🇳🇱 Nederlands</span>
-              <span class="locale-chip" data-locale="pl" onclick="_toggleLocaleChip(this)">🇵🇱 Polski</span>
-              <span class="locale-chip" data-locale="tr" onclick="_toggleLocaleChip(this)">🇹🇷 Türkçe</span>
+          <div class="wbs-approval-row">
+            <span class="wbs-approval-label">文体</span>
+            <div class="btn-group" id="settingsAccessibilityBtnGroup">
+              <button class="sel-btn" data-value="concise" onclick="selectSettingsAccessibility('concise')">簡潔</button>
+              <button class="sel-btn active" data-value="standard" onclick="selectSettingsAccessibility('standard')">標準</button>
+              <button class="sel-btn" data-value="approachable" onclick="selectSettingsAccessibility('approachable')">入りやすい</button>
             </div>
           </div>
+          <div class="wbs-approval-row" style="align-items:flex-start">
+            <span class="wbs-approval-label" style="padding-top:3px">検索言語</span>
+            <div class="locale-chips" id="settingsLocaleChips">
+              <span class="locale-chip active" data-locale="ja" onclick="_toggleSettingsLocaleChip(this)">🇯🇵 日本語</span>
+              <span class="locale-chip active" data-locale="en" onclick="_toggleSettingsLocaleChip(this)">🇺🇸 English</span>
+              <span class="locale-chip" data-locale="zh-CN" onclick="_toggleSettingsLocaleChip(this)">🇨🇳 中文(簡)</span>
+              <span class="locale-chip" data-locale="zh-TW" onclick="_toggleSettingsLocaleChip(this)">🇹🇼 中文(繁)</span>
+              <span class="locale-chip" data-locale="ko" onclick="_toggleSettingsLocaleChip(this)">🇰🇷 한국어</span>
+              <span class="locale-chip" data-locale="fr" onclick="_toggleSettingsLocaleChip(this)">🇫🇷 Français</span>
+              <span class="locale-chip" data-locale="de" onclick="_toggleSettingsLocaleChip(this)">🇩🇪 Deutsch</span>
+              <span class="locale-chip" data-locale="es" onclick="_toggleSettingsLocaleChip(this)">🇪🇸 Español</span>
+              <span class="locale-chip" data-locale="pt" onclick="_toggleSettingsLocaleChip(this)">🇧🇷 Português</span>
+              <span class="locale-chip" data-locale="ar" onclick="_toggleSettingsLocaleChip(this)">🇸🇦 العربية</span>
+              <span class="locale-chip" data-locale="ru" onclick="_toggleSettingsLocaleChip(this)">🇷🇺 Русский</span>
+              <span class="locale-chip" data-locale="hi" onclick="_toggleSettingsLocaleChip(this)">🇮🇳 हिन्दी</span>
+              <span class="locale-chip" data-locale="th" onclick="_toggleSettingsLocaleChip(this)">🇹🇭 ภาษาไทย</span>
+              <span class="locale-chip" data-locale="vi" onclick="_toggleSettingsLocaleChip(this)">🇻🇳 Tiếng Việt</span>
+              <span class="locale-chip" data-locale="id" onclick="_toggleSettingsLocaleChip(this)">🇮🇩 Bahasa</span>
+              <span class="locale-chip" data-locale="it" onclick="_toggleSettingsLocaleChip(this)">🇮🇹 Italiano</span>
+              <span class="locale-chip" data-locale="nl" onclick="_toggleSettingsLocaleChip(this)">🇳🇱 Nederlands</span>
+              <span class="locale-chip" data-locale="pl" onclick="_toggleSettingsLocaleChip(this)">🇵🇱 Polski</span>
+              <span class="locale-chip" data-locale="tr" onclick="_toggleSettingsLocaleChip(this)">🇹🇷 Türkçe</span>
+            </div>
+          </div>
+          <div class="wbs-approval-actions">
+            <button class="btn-wbs-approve" onclick="signalSettingsConfirmed()">この設定で調査を開始</button>
+            <button class="btn-wbs-cancel" onclick="signalSettingsCancelled()">キャンセル</button>
+          </div>
+        </div>
+
+        <!-- WBS承認パネル（WBS生成後に表示・フィードバック+承認のみ） -->
+        <div class="wbs-approval-panel" id="wbsApprovalPanel">
           <span class="wbs-feedback-toggle" onclick="toggleWbsFeedback()">▶ WBSの修正を依頼する</span>
           <div class="wbs-feedback-body" id="wbsFeedbackBody" style="display:none">
             <textarea id="wbsFeedbackText" placeholder="例: Phase 2 をスキップして調査フェーズを短縮してください"></textarea>
@@ -595,10 +604,75 @@
     // ── WBS承認パネル ─────────────────────────────────────────
     let _wbsDepth = 'standard';
     let _wbsAccessibility = 'standard';
+    let _settingsDepth = 'standard';
+    let _settingsAccessibility = 'standard';
 
     function _getSelectedLocales() {
       return Array.from(document.querySelectorAll('#localeChips .locale-chip.active'))
         .map(el => el.dataset.locale);
+    }
+
+    function _initSettingsLocaleChips(activeLocales) {
+      document.querySelectorAll('#settingsLocaleChips .locale-chip').forEach(chip => {
+        chip.classList.toggle('active', activeLocales.includes(chip.dataset.locale));
+      });
+    }
+
+    function _toggleSettingsLocaleChip(el) {
+      el.classList.toggle('active');
+    }
+
+    function _getSelectedSettingsLocales() {
+      return Array.from(document.querySelectorAll('#settingsLocaleChips .locale-chip.active'))
+        .map(c => c.dataset.locale);
+    }
+
+    function showSettingsPanel(depth, style, locales, accessibility) {
+      _settingsDepth = depth || 'standard';
+      _settingsAccessibility = accessibility || 'standard';
+      document.querySelectorAll('#settingsDepthBtnGroup .sel-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === _settingsDepth);
+      });
+      document.querySelectorAll('#settingsAccessibilityBtnGroup .sel-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === _settingsAccessibility);
+      });
+      document.getElementById('settingsStyleSelect').value = style || 'research_report';
+      _initSettingsLocaleChips(locales || ['ja', 'en']);
+      document.getElementById('settingsPanel').classList.add('visible');
+    }
+
+    function hideSettingsPanel() {
+      document.getElementById('settingsPanel').classList.remove('visible');
+    }
+
+    function selectSettingsDepth(value) {
+      _settingsDepth = value;
+      document.querySelectorAll('#settingsDepthBtnGroup .sel-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === value);
+      });
+    }
+
+    function selectSettingsAccessibility(value) {
+      _settingsAccessibility = value;
+      document.querySelectorAll('#settingsAccessibilityBtnGroup .sel-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === value);
+      });
+    }
+
+    function signalSettingsConfirmed() {
+      hideSettingsPanel();
+      window.__rt_signal({
+        type: 'settings_confirmed',
+        depth: _settingsDepth,
+        style: document.getElementById('settingsStyleSelect').value,
+        locales: _getSelectedSettingsLocales(),
+        accessibility: _settingsAccessibility,
+      });
+    }
+
+    function signalSettingsCancelled() {
+      hideSettingsPanel();
+      window.__rt_signal({ type: 'settings_cancelled' });
     }
 
     function _initLocaleChips(locales) {
@@ -621,17 +695,7 @@
       container.appendChild(item);
     }
 
-    function showWbsApproval(depth, style, locales, accessibility) {
-      _wbsDepth = depth;
-      _wbsAccessibility = accessibility || 'standard';
-      document.querySelectorAll('#depthBtnGroup .sel-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.value === depth);
-      });
-      document.querySelectorAll('#accessibilityBtnGroup .sel-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.value === _wbsAccessibility);
-      });
-      document.getElementById('styleSelect').value = style;
-      _initLocaleChips(locales || ['ja', 'en']);
+    function showWbsApproval() {
       document.getElementById('wbsFeedbackBody').style.display = 'none';
       document.getElementById('wbsFeedbackText').value = '';
       document.querySelector('.wbs-feedback-toggle').textContent = '▶ WBSの修正を依頼する';
@@ -640,20 +704,6 @@
 
     function hideWbsApproval() {
       document.getElementById('wbsApprovalPanel').classList.remove('visible');
-    }
-
-    function selectDepth(value) {
-      _wbsDepth = value;
-      document.querySelectorAll('#depthBtnGroup .sel-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.value === value);
-      });
-    }
-
-    function selectAccessibility(value) {
-      _wbsAccessibility = value;
-      document.querySelectorAll('#accessibilityBtnGroup .sel-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.value === value);
-      });
     }
 
     function toggleWbsFeedback() {
@@ -669,10 +719,6 @@
       window.__rt_signal({
         type: 'wbs_approval',
         approved: approved,
-        depth: _wbsDepth,
-        style: document.getElementById('styleSelect').value,
-        locales: _getSelectedLocales(),
-        accessibility: _wbsAccessibility,
       });
     }
 
@@ -683,10 +729,6 @@
       window.__rt_signal({
         type: 'wbs_feedback',
         text: text,
-        depth: _wbsDepth,
-        style: document.getElementById('styleSelect').value,
-        locales: _getSelectedLocales(),
-        accessibility: _wbsAccessibility,
       });
     }
 

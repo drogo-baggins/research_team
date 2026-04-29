@@ -679,6 +679,7 @@ async def test_run_interactive_additional_request_loop(tmp_path):
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
     mock_ui.get_current_mode = MagicMock(return_value="new_request")
+    mock_ui.show_new_research_form = AsyncMock(return_value={"depth": "standard", "style": "research_report", "locales": ["ja", "en"], "accessibility": "standard"})
     coord._ui = mock_ui
 
     run_calls: list[ResearchRequest] = []
@@ -719,6 +720,7 @@ async def test_run_interactive_updates_session_last_run_id(tmp_path, monkeypatch
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
     mock_ui.get_current_mode = MagicMock(return_value="new_request")
+    mock_ui.show_new_research_form = AsyncMock(return_value={"depth": "standard", "style": "research_report", "locales": ["ja", "en"], "accessibility": "standard"})
     coord._ui = mock_ui
     coord._log = AsyncMock()
 
@@ -808,6 +810,7 @@ async def test_run_interactive_regenerate_manifest_missing_falls_back_to_run(tmp
     mock_ui.append_log = AsyncMock()
     mock_ui.wait_for_user_message = fake_wait
     mock_ui.get_current_mode = MagicMock(return_value="new_request")
+    mock_ui.show_new_research_form = AsyncMock(return_value={"depth": "standard", "style": "research_report", "locales": ["ja", "en"], "accessibility": "standard"})
     coord._ui = mock_ui
     coord._log = AsyncMock()
     notify_calls: list[tuple[str, str]] = []

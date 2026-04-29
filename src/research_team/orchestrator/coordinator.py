@@ -1414,24 +1414,15 @@ class ResearchCoordinator:
         if not self._ui or not hasattr(self._ui, "show_wbs_approval"):
             return True
 
-        await self._notify("PM", "WBSを作成しました。右パネルで内容を確認し、調査深度・出力スタイルを選択してください。")
+        await self._notify("PM", "WBSを作成しました。右パネルで内容を確認してください。")
 
         for _ in range(max_revisions):
-            result = await self._ui.show_wbs_approval(
-                depth=request.depth,
-                style=request.style,
-                locales=request.locales,
-                accessibility=request.accessibility,
-            )
+            result = await self._ui.show_wbs_approval()
 
             if result is None:
                 return False
 
             if result.get("approved"):
-                request.depth = result["depth"]
-                request.style = result["style"]
-                request.locales = result.get("locales", request.locales)
-                request.accessibility = result.get("accessibility", request.accessibility)
                 set_locales = getattr(self._search_engine, "set_preferred_locales", None)
                 if callable(set_locales):
                     set_locales(request.locales)
@@ -1579,7 +1570,36 @@ class ResearchCoordinator:
             run_id = session.run_count
             if not session.session_id:
                 session.session_id = self._make_session_id(topic)
-            request = ResearchRequest(topic=topic, depth=depth, accessibility=accessibility, output_format=output_format)
+
+            if self._ui and hasattr(self._ui, "show_new_research_form"):
+                settings = await self._ui.show_new_research_form(
+                    depth=depth,
+                    style=style,
+                    locales=["ja", "en"],
+                    accessibility=accessibility,
+                )
+                if settings is None:
+                    session.run_count -= 1
+                    await self._ui.append_agent_message("CSM", "調査をキャンセルしました。")
+                    continue
+                depth_confirmed = settings["depth"]
+                style_confirmed = settings["style"]
+                locales_confirmed = settings.get("locales", ["ja", "en"])
+                accessibility_confirmed = settings.get("accessibility", accessibility)
+            else:
+                depth_confirmed = depth
+                style_confirmed = style
+                locales_confirmed = ["ja", "en"]
+                accessibility_confirmed = accessibility
+
+            request = ResearchRequest(
+                topic=topic,
+                depth=depth_confirmed,
+                accessibility=accessibility_confirmed,
+                style=style_confirmed,
+                output_format=output_format,
+                locales=locales_confirmed,
+            )
             try:
                 result = await self.run(request, run_id=run_id, session_id=session.session_id)
                 session.current_topic = topic
